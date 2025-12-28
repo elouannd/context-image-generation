@@ -11,7 +11,7 @@ A SillyTavern extension that adds Gemini-powered image generation with character
 
 ## Requirements
 
-> ⚠️ **Important:** A Paid Tier of AiStudio is needed to geerate picture. Free version will not work.
+> ⚠️ **Important:** A Paid Tier of AiStudio is needed to generate pictures. Free version will not work.
 
 - SillyTavern (latest staging branch)
 - Google AI Studio API key (paid tier) configured in SillyTavern
