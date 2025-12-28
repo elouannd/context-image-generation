@@ -57,12 +57,8 @@ Aliases: `/proimg`, `/geminiimg`
 | System Instruction | Customize instructions for the image model |
 
 ## Troubleshooting
+- Swipping a picture will result in a error. 
 
-### OAuth Error
-If you see "API keys are not supported by this API. Expected OAuth2 access token":
-1. Make sure your SillyTavern is on the **latest staging branch**
-2. Run `git pull` in your SillyTavern folder
-3. Restart SillyTavern
 
 ## To-Do
 [ ] Add Support for other Image generation services like Z-ai and Flux
