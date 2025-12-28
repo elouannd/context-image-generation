@@ -10,27 +10,20 @@ A SillyTavern extension that adds Gemini-powered image generation with character
 - **Slash Command** - `/proimagine <prompt>` for quick generation
 
 ## Requirements
-## Pricing
 
-| Model | Approximate Cost |
-|-------|-----------------|
-| gemini-2.5-flash-image | ~$0.04/image (1K) |
-| gemini-3-pro-image-preview | ~$0.14/image (1K) |
+> ⚠️ **Important:** Requires SillyTavern **staging branch** from December 2024 or later. The image generation feature needs recent backend changes. Run `git pull` if you get OAuth errors.
 
-*Prices are estimates based on Google AI Studio rates and may vary.*
-
-
-- SillyTavern (latest version recommended)
-- Google AI Studio API key (With paid tier) configured in SillyTavern
+- SillyTavern (latest staging branch)
+- Google AI Studio API key (paid tier) configured in SillyTavern
 - A Gemini model with image generation capability:
-  - `gemini-2.5-flash-image` (Nano Banana 🍌)
-  - `gemini-3-pro-image-preview` (Nano Banana Pro 🍌)
+  - `gemini-2.5-flash-image` (~$0.04/image)
+  - `gemini-3-pro-image-preview` (~$0.14/image)
 
 ## Installation
 
 1. Navigate to your SillyTavern in the Extensions.
 2. Click on Install Extension Button and paste this repo link
-3. Paste your Aistudio API key in Chat Completion settings
+3. Paste your AI Studio API key in Chat Completion settings
 4. Profit!
    
 ## Usage
@@ -56,12 +49,20 @@ Aliases: `/proimg`, `/geminiimg`
 
 | Setting | Description |
 |---------|-------------|
-| Model | Choose between Flash (fast) or Pro (higher quality) |
+| Model | Choose between Flash (~$0.04) or Pro (~$0.14) |
 | Aspect Ratio | 1:1, 3:4, 4:3, 9:16, or 16:9 |
 | Image Size | Pro only: Default, 1K, or 2K |
 | Use Avatar References | Include character/user avatars as visual references |
 | Include Descriptions | Add character descriptions to the prompt |
 | System Instruction | Customize instructions for the image model |
+
+## Troubleshooting
+
+### OAuth Error
+If you see "API keys are not supported by this API. Expected OAuth2 access token":
+1. Make sure your SillyTavern is on the **latest staging branch**
+2. Run `git pull` in your SillyTavern folder
+3. Restart SillyTavern
 
 ## To-Do
 [ ] Add Support for other Image generation services like Z-ai and Flux
