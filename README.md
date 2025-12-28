@@ -4,36 +4,26 @@ A SillyTavern extension that adds Gemini-powered image generation with character
 
 ## Features
 
-- **Message Generation Button** - Wand icon (✨) on each message to generate an image from that message's content
+- **Message Generation Button** - Wand icon in the dropdown menu on each message to generate an image from that message's content
 - **Character Context** - Automatically includes character and user descriptions in prompts
 - **Avatar References** - Uses character and user avatars as visual references for consistent art
-- **Gallery** - Stores up to 50 generated images with thumbnails in extension settings
 - **Slash Command** - `/proimagine <prompt>` for quick generation
 
 ## Requirements
 
 - SillyTavern (latest version recommended)
-- Google AI Studio API key configured in SillyTavern
+- Google AI Studio API key (With paid tier) configured in SillyTavern
 - A Gemini model with image generation capability:
   - `gemini-2.5-flash-image` (Nano Banana 🍌)
   - `gemini-3-pro-image-preview` (Nano Banana Pro 🍌)
 
 ## Installation
 
-1. Navigate to your SillyTavern's extensions folder:
-   ```
-   SillyTavern/public/scripts/extensions/third-party/
-   ```
-
-2. Clone this repository:
-   ```bash
-   git clone https://github.com/elouannd/context-image-generation.git
-   ```
-
-3. Restart SillyTavern or refresh the page
-
-4. Enable the extension in **Extensions** panel
-
+1. Navigate to your SillyTavern in the Extensions.
+2. Click on Install Extension Button and paste this repo link
+3. Paste your Aistudio API key in Chat Completion settings
+4. Profit!
+   
 ## Usage
 
 ### Message Button
