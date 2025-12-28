@@ -27,7 +27,7 @@ A SillyTavern extension that adds Gemini-powered image generation with character
 
 2. Clone this repository:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/context-image-generation.git
+   git clone https://github.com/elouannd/context-image-generation.git
    ```
 
 3. Restart SillyTavern or refresh the page
