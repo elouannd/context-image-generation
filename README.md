@@ -10,6 +10,15 @@ A SillyTavern extension that adds Gemini-powered image generation with character
 - **Slash Command** - `/proimagine <prompt>` for quick generation
 
 ## Requirements
+## Pricing
+
+| Model | Approximate Cost |
+|-------|-----------------|
+| gemini-2.5-flash-image | ~$0.04/image (1K) |
+| gemini-3-pro-image-preview | ~$0.14/image (1K) |
+
+*Prices are estimates based on Google AI Studio rates and may vary.*
+
 
 - SillyTavern (latest version recommended)
 - Google AI Studio API key (With paid tier) configured in SillyTavern
