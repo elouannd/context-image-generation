@@ -603,6 +603,14 @@ jQuery(async () => {
         setTimeout(injectAllMessageButtons, 100);
     });
 
+    eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, () => {
+        setTimeout(injectAllMessageButtons, 100);
+    });
+
+    eventSource.on(event_types.CHAT_CREATED, () => {
+        setTimeout(injectAllMessageButtons, 100);
+    });
+
     setTimeout(injectAllMessageButtons, 500);
 
     SlashCommandParser.addCommandObject(SlashCommand.fromProps({
