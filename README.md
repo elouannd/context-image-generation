@@ -54,6 +54,9 @@ Aliases: `/proimg`, `/geminiimg`
 | Include Descriptions | Add character descriptions to the prompt |
 | System Instruction | Customize instructions for the image model |
 
+## To-Do
+[ ] Add Support for other Image generation services like Z-ai and Flux
+
 ## License
 
 This project is released into the public domain under [The Unlicense](LICENSE). You are free to use, modify, and distribute this code for any purpose, with or without attribution.
