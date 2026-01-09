@@ -2,6 +2,7 @@
  * Context Image Generation 🍌
  * Gemini-powered image generation with avatar references and character context
  * Uses SillyTavern's backend to handle Google AI authentication
+ * Version 1.1.0
  */
 
 import { 
@@ -33,6 +34,8 @@ const defaultSettings = {
     image_size: '',
     use_avatars: false,
     include_descriptions: false,
+    use_previous_image: false,  // v1.1: Use last generated image as reference
+    message_depth: 1,           // v1.1: Number of messages to include (1-10)
     system_instruction: 'You are an image generation assistant. When reference images are provided, they represent the characters in the story. Generate an illustration that depicts the scene described in the prompt while maintaining the art style and appearance of the reference characters. You are not obligated to include both characters - if the scene depicts only one character alone, illustrate them alone.',
     gallery: [],
 };
@@ -53,6 +56,8 @@ async function loadSettings() {
     $('#cig_image_size').val(extension_settings[extensionName].image_size);
     $('#cig_use_avatars').prop('checked', extension_settings[extensionName].use_avatars);
     $('#cig_include_descriptions').prop('checked', extension_settings[extensionName].include_descriptions);
+    $('#cig_use_previous_image').prop('checked', extension_settings[extensionName].use_previous_image);
+    $('#cig_message_depth').val(extension_settings[extensionName].message_depth);
     $('#cig_system_instruction').val(extension_settings[extensionName].system_instruction);
 
     toggleImageSizeVisibility();
@@ -114,18 +119,35 @@ async function getCharacterAvatar() {
     }
 }
 
-function getLastMessage() {
+/**
+ * Get recent messages from chat based on depth setting
+ * @param {number} depth - Number of messages to retrieve
+ * @param {number|null} fromMessageId - Start from this message ID (null = from end)
+ * @returns {Array} Array of {text, isUser, name} objects
+ */
+function getRecentMessages(depth, fromMessageId = null) {
     const context = getContext();
     const chat = context.chat;
-    if (!chat || chat.length === 0) return { text: '', isUser: false };
+    if (!chat || chat.length === 0) return [];
 
-    for (let i = chat.length - 1; i >= 0; i--) {
+    const messages = [];
+    const startIndex = fromMessageId !== null ? fromMessageId : chat.length - 1;
+    
+    for (let i = startIndex; i >= 0 && messages.length < depth; i--) {
         const message = chat[i];
         if (message.mes && !message.is_system) {
-            return { text: message.mes, isUser: message.is_user };
+            const charName = context.name2 || 'Character';
+            const userName = name1 || 'User';
+            messages.push({
+                text: message.mes,
+                isUser: message.is_user,
+                name: message.is_user ? userName : charName,
+            });
         }
     }
-    return { text: '', isUser: false };
+
+    // Reverse to get chronological order (oldest first)
+    return messages.reverse();
 }
 
 function getCharacterDescriptions() {
@@ -144,10 +166,11 @@ function getCharacterDescriptions() {
 
 /**
  * Build messages array for the API request
- * @param {string} prompt - The prompt text
- * @param {string|null} sender - Optional sender: '{{user}}', '{{char}}', or null for slash commands
+ * @param {string} prompt - The prompt text (used for slash commands, ignored for message-based generation)
+ * @param {string|null} sender - Optional sender context
+ * @param {number|null} messageId - Message ID to generate from (null = use prompt directly)
  */
-async function buildMessages(prompt, sender = null) {
+async function buildMessages(prompt, sender = null, messageId = null) {
     const settings = extension_settings[extensionName];
     const messages = [];
     const contentParts = [];
@@ -173,13 +196,47 @@ async function buildMessages(prompt, sender = null) {
         }
     }
 
-    // Add prompt with sender context if available
-    if (sender) {
-        contentParts.push({ type: 'text', text: `[Message from ${sender}]: ${prompt}` });
+    // Build prompt based on message depth
+    const depth = settings.message_depth || 1;
+    
+    if (messageId !== null || sender !== null) {
+        // Message-based generation: use depth setting
+        const recentMessages = getRecentMessages(depth, messageId);
+        
+        if (recentMessages.length > 0) {
+            let storyContext = '[Story Context - Generate an image for the final message]:\n\n';
+            
+            for (const msg of recentMessages) {
+                const senderTag = msg.isUser ? '{{user}}' : '{{char}}';
+                storyContext += `[${senderTag} (${msg.name})]: ${msg.text}\n\n`;
+            }
+            
+            contentParts.push({ type: 'text', text: storyContext.trim() });
+        } else {
+            // Fallback to single prompt
+            if (sender) {
+                contentParts.push({ type: 'text', text: `[Message from ${sender}]: ${prompt}` });
+            } else {
+                contentParts.push({ type: 'text', text: prompt });
+            }
+        }
     } else {
+        // Slash command: use prompt directly
         contentParts.push({ type: 'text', text: prompt });
     }
 
+    // Add previous generated image as reference if enabled
+    if (settings.use_previous_image && settings.gallery && settings.gallery.length > 0) {
+        const lastImage = settings.gallery[0];
+        console.log(`[${extensionName}] Adding previous generated image as reference`);
+        contentParts.push({ type: 'text', text: '[Reference: Previously generated image for style consistency]' });
+        contentParts.push({
+            type: 'image_url',
+            image_url: { url: `data:image/png;base64,${lastImage.imageData}` },
+        });
+    }
+
+    // Add avatars
     if (settings.use_avatars) {
         const userAvatarData = await getUserAvatar();
         const charAvatarData = await getCharacterAvatar();
@@ -207,14 +264,9 @@ async function buildMessages(prompt, sender = null) {
     return messages;
 }
 
-/**
- * Core generation function
- * @param {string} prompt - The prompt
- * @param {string|null} sender - Optional sender context
- */
-async function generateImageFromPrompt(prompt, sender = null) {
+async function generateImageFromPrompt(prompt, sender = null, messageId = null) {
     const settings = extension_settings[extensionName];
-    const messages = await buildMessages(prompt, sender);
+    const messages = await buildMessages(prompt, sender, messageId);
 
     const requestBody = {
         chat_completion_source: 'makersuite',
@@ -320,8 +372,11 @@ function renderGallery() {
 }
 
 async function generateImage() {
-    const lastMsg = getLastMessage();
-    if (!lastMsg.text) {
+    const settings = extension_settings[extensionName];
+    const depth = settings.message_depth || 1;
+    const recentMessages = getRecentMessages(depth);
+    
+    if (recentMessages.length === 0) {
         toastr.warning('No message found to generate image from.', 'Context Image Generation');
         return;
     }
@@ -330,11 +385,12 @@ async function generateImage() {
     generateBtn.addClass('generating');
     generateBtn.find('i').removeClass('fa-image').addClass('fa-spinner fa-spin');
 
-    // Determine sender
-    const charName = getContext().name2 || 'Character'; const userName = name1 || 'User'; const sender = lastMsg.isUser ? `{{user}} (${userName})` : `{{char}} (${charName})`;
+    // Get the last message for prompt summary
+    const lastMsg = recentMessages[recentMessages.length - 1];
+    const sender = lastMsg.isUser ? `{{user}} (${lastMsg.name})` : `{{char}} (${lastMsg.name})`;
 
     try {
-        const result = await generateImageFromPrompt(lastMsg.text, sender);
+        const result = await generateImageFromPrompt(lastMsg.text, sender, null);
         
         if (result) {
             const imageDataUrl = `data:${result.mimeType};base64,${result.imageData}`;
@@ -375,14 +431,15 @@ async function cigMessageButton($icon) {
         return;
     }
 
-    // Determine sender from message
-    const charName = getContext().name2 || 'Character'; const userName = name1 || 'User'; const sender = message.is_user ? `{{user}} (${userName})` : `{{char}} (${charName})`;
+    const charName = context.name2 || 'Character';
+    const userName = name1 || 'User';
+    const sender = message.is_user ? `{{user}} (${userName})` : `{{char}} (${charName})`;
 
     $icon.addClass('cig_busy');
     $icon.removeClass('fa-wand-magic-sparkles').addClass('fa-spinner fa-spin');
 
     try {
-        const result = await generateImageFromPrompt(prompt, sender);
+        const result = await generateImageFromPrompt(prompt, sender, messageId);
 
         if (result) {
             const imageDataUrl = `data:${result.mimeType};base64,${result.imageData}`;
@@ -432,8 +489,7 @@ async function slashCommandHandler(args, prompt) {
     }
 
     try {
-        // No sender for slash commands - it's a direct prompt
-        const result = await generateImageFromPrompt(trimmedPrompt, null);
+        const result = await generateImageFromPrompt(trimmedPrompt, null, null);
         
         if (result) {
             const imageDataUrl = `data:${result.mimeType};base64,${result.imageData}`;
@@ -460,7 +516,7 @@ function injectMessageButton(messageId) {
     if (extraButtons.find('.cig_message_gen').length > 0) return;
 
     const cigButton = $(`
-        <div title="Generate with Gemini 🍌" 
+        <div title="Generate with Gemini ��" 
              class="mes_button cig_message_gen fa-solid fa-wand-magic-sparkles" 
              data-i18n="[title]Generate with Gemini 🍌">
         </div>
@@ -569,6 +625,20 @@ jQuery(async () => {
 
     $('#cig_include_descriptions').on('change', function () {
         extension_settings[extensionName].include_descriptions = $(this).prop('checked');
+        saveSettingsDebounced();
+    });
+
+    $('#cig_use_previous_image').on('change', function () {
+        extension_settings[extensionName].use_previous_image = $(this).prop('checked');
+        saveSettingsDebounced();
+    });
+
+    $('#cig_message_depth').on('change', function () {
+        let value = parseInt($(this).val(), 10);
+        if (isNaN(value) || value < 1) value = 1;
+        if (value > 10) value = 10;
+        $(this).val(value);
+        extension_settings[extensionName].message_depth = value;
         saveSettingsDebounced();
     });
 

@@ -48,7 +48,19 @@
                 </div>
             </div>
 
-            <!-- Avatar References -->
+            <!-- Message Depth -->
+            <div class="flex-container">
+                <div class="flex1">
+                    <label for="cig_message_depth">
+                        Message Depth
+                        <small>(1-10 messages as context)</small>
+                    </label>
+                    <input type="number" id="cig_message_depth" class="cig-setting text_pole" 
+                           min="1" max="10" value="1" style="width: 80px;" />
+                </div>
+            </div>
+
+            <!-- Reference Options -->
             <div class="flex-container flexFlowColumn">
                 <label class="checkbox_label" title="Include user and character avatars as reference images">
                     <input type="checkbox" id="cig_use_avatars" class="cig-setting" />
@@ -57,6 +69,10 @@
                 <label class="checkbox_label" title="Include character and persona descriptions in the prompt">
                     <input type="checkbox" id="cig_include_descriptions" class="cig-setting" />
                     <span>Include character descriptions</span>
+                </label>
+                <label class="checkbox_label" title="Use the last generated image as a style reference">
+                    <input type="checkbox" id="cig_use_previous_image" class="cig-setting" />
+                    <span>Use previous image as reference</span>
                 </label>
             </div>
 
