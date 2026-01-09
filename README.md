@@ -2,6 +2,11 @@
 
 A SillyTavern extension that adds Gemini-powered image generation with character context and avatar references.
 
+## What's New in v1.1
+
+- **Message Depth** - Include 1-10 previous messages as story context for better scene understanding
+- **Previous Image Reference** - Use last generated image as style reference for consistency
+
 ## Features
 
 - **Message Generation Button** - Wand icon in the dropdown menu on each message to generate an image from that message's content
@@ -52,8 +57,10 @@ Aliases: `/proimg`, `/geminiimg`
 | Model | Choose between Flash (~$0.04) or Pro (~$0.14) |
 | Aspect Ratio | 1:1, 3:4, 4:3, 9:16, or 16:9 |
 | Image Size | Pro only: Default, 1K, or 2K |
+| Message Depth | Number of messages to include as context (1-10) |
 | Use Avatar References | Include character/user avatars as visual references |
 | Include Descriptions | Add character descriptions to the prompt |
+| Use Previous Image | Use last generated image as style reference |
 | System Instruction | Customize instructions for the image model |
 
 ## Troubleshooting
