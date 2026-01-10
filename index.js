@@ -2,7 +2,7 @@
  * Context Image Generation 🍌
  * Gemini-powered image generation with avatar references and character context
  * Uses SillyTavern's backend to handle Google AI authentication
- * Version 1.1.0
+ * Version 1.1.1
  */
 
 import { 
@@ -18,7 +18,7 @@ import {
 } from '../../../../script.js';
 
 import { getContext, extension_settings } from '../../../extensions.js';
-import { getBase64Async } from '../../../utils.js';
+import { getBase64Async, saveBase64AsFile } from '../../../utils.js';
 import { power_user } from '../../../power-user.js';
 import { MEDIA_DISPLAY, MEDIA_SOURCE, MEDIA_TYPE, SCROLL_BEHAVIOR } from '../../../constants.js';
 import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
@@ -34,8 +34,8 @@ const defaultSettings = {
     image_size: '',
     use_avatars: false,
     include_descriptions: false,
-    use_previous_image: false,  // v1.1: Use last generated image as reference
-    message_depth: 1,           // v1.1: Number of messages to include (1-10)
+    use_previous_image: false,
+    message_depth: 1,
     system_instruction: 'You are an image generation assistant. When reference images are provided, they represent the characters in the story. Generate an illustration that depicts the scene described in the prompt while maintaining the art style and appearance of the reference characters. You are not obligated to include both characters - if the scene depicts only one character alone, illustrate them alone.',
     gallery: [],
 };
@@ -119,12 +119,6 @@ async function getCharacterAvatar() {
     }
 }
 
-/**
- * Get recent messages from chat based on depth setting
- * @param {number} depth - Number of messages to retrieve
- * @param {number|null} fromMessageId - Start from this message ID (null = from end)
- * @returns {Array} Array of {text, isUser, name} objects
- */
 function getRecentMessages(depth, fromMessageId = null) {
     const context = getContext();
     const chat = context.chat;
@@ -146,7 +140,6 @@ function getRecentMessages(depth, fromMessageId = null) {
         }
     }
 
-    // Reverse to get chronological order (oldest first)
     return messages.reverse();
 }
 
@@ -164,12 +157,6 @@ function getCharacterDescriptions() {
     };
 }
 
-/**
- * Build messages array for the API request
- * @param {string} prompt - The prompt text (used for slash commands, ignored for message-based generation)
- * @param {string|null} sender - Optional sender context
- * @param {number|null} messageId - Message ID to generate from (null = use prompt directly)
- */
 async function buildMessages(prompt, sender = null, messageId = null) {
     const settings = extension_settings[extensionName];
     const messages = [];
@@ -196,11 +183,9 @@ async function buildMessages(prompt, sender = null, messageId = null) {
         }
     }
 
-    // Build prompt based on message depth
     const depth = settings.message_depth || 1;
     
     if (messageId !== null || sender !== null) {
-        // Message-based generation: use depth setting
         const recentMessages = getRecentMessages(depth, messageId);
         
         if (recentMessages.length > 0) {
@@ -213,7 +198,6 @@ async function buildMessages(prompt, sender = null, messageId = null) {
             
             contentParts.push({ type: 'text', text: storyContext.trim() });
         } else {
-            // Fallback to single prompt
             if (sender) {
                 contentParts.push({ type: 'text', text: `[Message from ${sender}]: ${prompt}` });
             } else {
@@ -221,11 +205,9 @@ async function buildMessages(prompt, sender = null, messageId = null) {
             }
         }
     } else {
-        // Slash command: use prompt directly
         contentParts.push({ type: 'text', text: prompt });
     }
 
-    // Add previous generated image as reference if enabled
     if (settings.use_previous_image && settings.gallery && settings.gallery.length > 0) {
         const lastImage = settings.gallery[0];
         console.log(`[${extensionName}] Adding previous generated image as reference`);
@@ -236,7 +218,6 @@ async function buildMessages(prompt, sender = null, messageId = null) {
         });
     }
 
-    // Add avatars
     if (settings.use_avatars) {
         const userAvatarData = await getUserAvatar();
         const charAvatarData = await getCharacterAvatar();
@@ -385,7 +366,6 @@ async function generateImage() {
     generateBtn.addClass('generating');
     generateBtn.find('i').removeClass('fa-image').addClass('fa-spinner fa-spin');
 
-    // Get the last message for prompt summary
     const lastMsg = recentMessages[recentMessages.length - 1];
     const sender = lastMsg.isUser ? `{{user}} (${lastMsg.name})` : `{{char}} (${lastMsg.name})`;
 
@@ -442,7 +422,10 @@ async function cigMessageButton($icon) {
         const result = await generateImageFromPrompt(prompt, sender, messageId);
 
         if (result) {
-            const imageDataUrl = `data:${result.mimeType};base64,${result.imageData}`;
+            // Save image to file instead of embedding base64
+            const fileName = `cig_${Date.now()}`;
+            const filePath = await saveBase64AsFile(result.imageData, extensionName, fileName, 'png');
+            console.log(`[${extensionName}] Image saved to:`, filePath);
 
             if (!message.extra || typeof message.extra !== 'object') {
                 message.extra = {};
@@ -457,7 +440,7 @@ async function cigMessageButton($icon) {
             }
 
             const mediaAttachment = {
-                url: imageDataUrl,
+                url: filePath,  // Use file path instead of base64 data URL
                 type: MEDIA_TYPE.IMAGE,
                 title: prompt.substring(0, 100),
                 source: MEDIA_SOURCE.GENERATED,
@@ -516,7 +499,7 @@ function injectMessageButton(messageId) {
     if (extraButtons.find('.cig_message_gen').length > 0) return;
 
     const cigButton = $(`
-        <div title="Generate with Gemini ��" 
+        <div title="Generate with Gemini 🍌" 
              class="mes_button cig_message_gen fa-solid fa-wand-magic-sparkles" 
              data-i18n="[title]Generate with Gemini 🍌">
         </div>
