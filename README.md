@@ -2,10 +2,17 @@
 
 A SillyTavern extension that adds Gemini-powered image generation with character context and avatar references.
 
+## What's New in v1.2
+
+- **Provider Selection** - Choose between Google AI Studio or OpenRouter
+- **4K Image Support** - Generate 4K images with Gemini 3 Pro
+- **Dynamic Model List** - Models update automatically based on selected provider
+
 ## What's New in v1.1
 
 - **Message Depth** - Include 1-10 previous messages as story context for better scene understanding
 - **Previous Image Reference** - Use last generated image as style reference for consistency
+- **File-Based Storage** - Images saved to files instead of base64 in chat logs
 
 ## Features
 
@@ -16,19 +23,19 @@ A SillyTavern extension that adds Gemini-powered image generation with character
 
 ## Requirements
 
-> ⚠️ **Important:** A Paid Tier of AiStudio is needed to generate pictures. Free version will not work.
+> ⚠️ **Important:** A Paid Tier of AiStudio or OpenRouter credits is needed to generate pictures. Free version will not work.
 
 - SillyTavern (latest staging branch)
-- Google AI Studio API key (paid tier) configured in SillyTavern
+- Google AI Studio API key OR OpenRouter API key configured in SillyTavern
 - A Gemini model with image generation capability:
-  - `gemini-2.5-flash-image` (~$0.04/image)
-  - `gemini-3-pro-image-preview` (~$0.14/image)
+  - `Nano Banana 🍌` (Flash) - Faster, cheaper (~$0.04/image)
+  - `Nano Banana Pro 🍌` (Pro) - Higher quality, 4K support (~$0.14/image)
 
 ## Installation
 
 1. Navigate to your SillyTavern in the Extensions.
 2. Click on Install Extension Button and paste this repo link
-3. Paste your AI Studio API key in Chat Completion settings
+3. Configure your API key in Chat Completion settings
 4. Profit!
    
 ## Usage
@@ -39,7 +46,8 @@ A SillyTavern extension that adds Gemini-powered image generation with character
 3. Click the wand icon (✨) to generate an image from that message
 
 ### Settings Panel
-- Configure model, aspect ratio, and image size
+- Select your provider (Google AI Studio or OpenRouter)
+- Choose model, aspect ratio, and image size
 - Toggle avatar references and character descriptions
 - Customize the system instruction
 - View and manage gallery
@@ -54,9 +62,10 @@ Aliases: `/proimg`, `/geminiimg`
 
 | Setting | Description |
 |---------|-------------|
-| Model | Choose between Flash (~$0.04) or Pro (~$0.14) |
+| Provider | Google AI Studio or OpenRouter |
+| Model | Flash (~$0.04) or Pro (~$0.14) |
 | Aspect Ratio | 1:1, 3:4, 4:3, 9:16, or 16:9 |
-| Image Size | Pro only: Default, 1K, or 2K |
+| Image Size | Pro only: Default, 1K, 2K, or 4K |
 | Message Depth | Number of messages to include as context (1-10) |
 | Use Avatar References | Include character/user avatars as visual references |
 | Include Descriptions | Add character descriptions to the prompt |
@@ -64,7 +73,7 @@ Aliases: `/proimg`, `/geminiimg`
 | System Instruction | Customize instructions for the image model |
 
 ## Troubleshooting
-- Swipping a picture will result in a error. 
+- Swiping a picture will result in an error.
 
 
 ## To-Do

@@ -2,7 +2,7 @@
  * Context Image Generation 🍌
  * Gemini-powered image generation with avatar references and character context
  * Uses SillyTavern's backend to handle Google AI authentication
- * Version 1.1.1
+ * Version 1.2.0
  */
 
 import { 
@@ -28,7 +28,20 @@ import { ARGUMENT_TYPE, SlashCommandArgument } from '../../../slash-commands/Sla
 const extensionName = 'context-image-generation';
 const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
 
+// Provider-specific model configurations
+const PROVIDER_MODELS = {
+    makersuite: {
+        flash: { id: 'gemini-2.5-flash-image', name: 'Nano Banana 🍌 (~$0.04/img)' },
+        pro: { id: 'gemini-3-pro-image-preview', name: 'Nano Banana Pro 🍌 (~$0.14/img)' },
+    },
+    openrouter: {
+        flash: { id: 'google/gemini-2.5-flash-image-preview', name: 'Nano Banana 🍌 (OpenRouter)' },
+        pro: { id: 'google/gemini-3-pro-image-preview', name: 'Nano Banana Pro 🍌 (OpenRouter)' },
+    },
+};
+
 const defaultSettings = {
+    provider: 'makersuite',
     model: 'gemini-2.5-flash-image',
     aspect_ratio: '1:1',
     image_size: '',
@@ -42,6 +55,28 @@ const defaultSettings = {
 
 const MAX_GALLERY_SIZE = 50;
 
+function updateModelDropdown() {
+    const settings = extension_settings[extensionName];
+    const provider = settings.provider || 'makersuite';
+    const models = PROVIDER_MODELS[provider];
+    
+    const $modelSelect = $('#cig_model');
+    $modelSelect.empty();
+    
+    $modelSelect.append(`<option value="${models.flash.id}">${models.flash.name}</option>`);
+    $modelSelect.append(`<option value="${models.pro.id}">${models.pro.name}</option>`);
+    
+    // Try to maintain model type selection when switching providers
+    const currentModel = settings.model || '';
+    if (currentModel.includes('pro') || currentModel.includes('3-pro')) {
+        $modelSelect.val(models.pro.id);
+        settings.model = models.pro.id;
+    } else {
+        $modelSelect.val(models.flash.id);
+        settings.model = models.flash.id;
+    }
+}
+
 async function loadSettings() {
     extension_settings[extensionName] = extension_settings[extensionName] || {};
 
@@ -51,6 +86,8 @@ async function loadSettings() {
         }
     }
 
+    $('#cig_provider').val(extension_settings[extensionName].provider);
+    updateModelDropdown();
     $('#cig_model').val(extension_settings[extensionName].model);
     $('#cig_aspect_ratio').val(extension_settings[extensionName].aspect_ratio);
     $('#cig_image_size').val(extension_settings[extensionName].image_size);
@@ -66,7 +103,7 @@ async function loadSettings() {
 
 function toggleImageSizeVisibility() {
     const model = extension_settings[extensionName].model;
-    const isProModel = /gemini-3-pro/.test(model);
+    const isProModel = /gemini-3|3-pro/.test(model);
     $('#cig_image_size_container').toggle(isProModel);
 }
 
@@ -250,7 +287,7 @@ async function generateImageFromPrompt(prompt, sender = null, messageId = null) 
     const messages = await buildMessages(prompt, sender, messageId);
 
     const requestBody = {
-        chat_completion_source: 'makersuite',
+        chat_completion_source: settings.provider || 'makersuite',
         model: settings.model,
         messages: messages,
         max_tokens: 8192,
@@ -261,7 +298,7 @@ async function generateImageFromPrompt(prompt, sender = null, messageId = null) 
         stream: false,
     };
 
-    console.log(`[${extensionName}] Generating image with model:`, settings.model);
+    console.log(`[${extensionName}] Generating image with provider: ${settings.provider}, model:`, settings.model);
 
     const response = await fetch('/api/backends/chat-completions/generate', {
         method: 'POST',
@@ -422,7 +459,6 @@ async function cigMessageButton($icon) {
         const result = await generateImageFromPrompt(prompt, sender, messageId);
 
         if (result) {
-            // Save image to file instead of embedding base64
             const fileName = `cig_${Date.now()}`;
             const filePath = await saveBase64AsFile(result.imageData, extensionName, fileName, 'png');
             console.log(`[${extensionName}] Image saved to:`, filePath);
@@ -440,7 +476,7 @@ async function cigMessageButton($icon) {
             }
 
             const mediaAttachment = {
-                url: filePath,  // Use file path instead of base64 data URL
+                url: filePath,
                 type: MEDIA_TYPE.IMAGE,
                 title: prompt.substring(0, 100),
                 source: MEDIA_SOURCE.GENERATED,
@@ -584,6 +620,13 @@ jQuery(async () => {
     }
 
     await loadSettings();
+
+    $('#cig_provider').on('change', function () {
+        extension_settings[extensionName].provider = $(this).val();
+        updateModelDropdown();
+        toggleImageSizeVisibility();
+        saveSettingsDebounced();
+    });
 
     $('#cig_model').on('change', function () {
         extension_settings[extensionName].model = $(this).val();

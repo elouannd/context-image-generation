@@ -9,10 +9,20 @@
             <div class="flex-container flexFlowColumn">
                 <small>
                     <i class="fa-solid fa-info-circle"></i>
-                    Uses your Google AI Studio API key from
-                    <b>AI Response → Chat Completion Source → Google AI Studio</b>
+                    Configure your API key in <b>AI Response → Chat Completion Source</b>
                 </small>
                 <hr>
+            </div>
+
+            <!-- Provider Selection -->
+            <div class="flex-container">
+                <div class="flex1">
+                    <label for="cig_provider">Provider</label>
+                    <select id="cig_provider" class="cig-setting">
+                        <option value="makersuite">Google AI Studio</option>
+                        <option value="openrouter">OpenRouter</option>
+                    </select>
+                </div>
             </div>
 
             <!-- Model Selection -->
@@ -20,8 +30,7 @@
                 <div class="flex1">
                     <label for="cig_model">Model</label>
                     <select id="cig_model" class="cig-setting">
-                        <option value="gemini-2.5-flash-image">gemini-2.5-flash-image (~$0.04/img)</option>
-                        <option value="gemini-3-pro-image-preview">gemini-3-pro-image-preview (~$0.14/img)</option>
+                        <!-- Populated dynamically based on provider -->
                     </select>
                 </div>
             </div>
@@ -44,6 +53,7 @@
                         <option value="">Default</option>
                         <option value="1K">1K</option>
                         <option value="2K">2K</option>
+                        <option value="4K">4K</option>
                     </select>
                 </div>
             </div>
