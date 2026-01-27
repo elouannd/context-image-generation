@@ -2,15 +2,15 @@
  * Context Image Generation 🍌
  * Gemini-powered image generation with avatar references and character context
  * Uses SillyTavern's backend to handle Google AI authentication
- * Version 1.2.0
+ * Version 1.2.1
  */
 
-import { 
-    saveSettingsDebounced, 
-    getRequestHeaders, 
-    appendMediaToMessage, 
-    eventSource, 
-    event_types, 
+import {
+    saveSettingsDebounced,
+    getRequestHeaders,
+    appendMediaToMessage,
+    eventSource,
+    event_types,
     saveChatConditional,
     user_avatar,
     getUserAvatar as getAvatarPath,
@@ -20,6 +20,7 @@ import {
 import { getContext, extension_settings } from '../../../extensions.js';
 import { getBase64Async, saveBase64AsFile } from '../../../utils.js';
 import { power_user } from '../../../power-user.js';
+import { oai_settings } from '../../../openai.js';
 import { MEDIA_DISPLAY, MEDIA_SOURCE, MEDIA_TYPE, SCROLL_BEHAVIOR } from '../../../constants.js';
 import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
 import { SlashCommand } from '../../../slash-commands/SlashCommand.js';
@@ -59,13 +60,13 @@ function updateModelDropdown() {
     const settings = extension_settings[extensionName];
     const provider = settings.provider || 'makersuite';
     const models = PROVIDER_MODELS[provider];
-    
+
     const $modelSelect = $('#cig_model');
     $modelSelect.empty();
-    
+
     $modelSelect.append(`<option value="${models.flash.id}">${models.flash.name}</option>`);
     $modelSelect.append(`<option value="${models.pro.id}">${models.pro.name}</option>`);
-    
+
     // Try to maintain model type selection when switching providers
     const currentModel = settings.model || '';
     if (currentModel.includes('pro') || currentModel.includes('3-pro')) {
@@ -163,7 +164,7 @@ function getRecentMessages(depth, fromMessageId = null) {
 
     const messages = [];
     const startIndex = fromMessageId !== null ? fromMessageId : chat.length - 1;
-    
+
     for (let i = startIndex; i >= 0 && messages.length < depth; i--) {
         const message = chat[i];
         if (message.mes && !message.is_system) {
@@ -221,18 +222,18 @@ async function buildMessages(prompt, sender = null, messageId = null) {
     }
 
     const depth = settings.message_depth || 1;
-    
+
     if (messageId !== null || sender !== null) {
         const recentMessages = getRecentMessages(depth, messageId);
-        
+
         if (recentMessages.length > 0) {
             let storyContext = '[Story Context - Generate an image for the final message]:\n\n';
-            
+
             for (const msg of recentMessages) {
                 const senderTag = msg.isUser ? '{{user}}' : '{{char}}';
                 storyContext += `[${senderTag} (${msg.name})]: ${msg.text}\n\n`;
             }
-            
+
             contentParts.push({ type: 'text', text: storyContext.trim() });
         } else {
             if (sender) {
@@ -296,6 +297,9 @@ async function generateImageFromPrompt(prompt, sender = null, messageId = null) 
         request_image_aspect_ratio: settings.aspect_ratio || '1:1',
         request_image_resolution: settings.image_size || undefined,
         stream: false,
+        // Proxy support - uses configured reverse proxy from Chat Completion settings
+        reverse_proxy: oai_settings.reverse_proxy || '',
+        proxy_password: oai_settings.proxy_password || '',
     };
 
     console.log(`[${extensionName}] Generating image with provider: ${settings.provider}, model:`, settings.model);
@@ -313,13 +317,13 @@ async function generateImageFromPrompt(prompt, sender = null, messageId = null) 
         try {
             const errorJson = JSON.parse(errorText);
             errorMessage = errorJson.error?.message || errorJson.message || errorMessage;
-        } catch (e) {}
+        } catch (e) { }
         throw new Error(errorMessage);
     }
 
     const result = await response.json();
     const responseContent = result.responseContent;
-    
+
     if (responseContent?.parts) {
         for (const part of responseContent.parts) {
             if (part.inlineData?.data) {
@@ -340,7 +344,7 @@ async function generateImageFromPrompt(prompt, sender = null, messageId = null) 
 
 function addToGallery(imageData, prompt, messageId = null) {
     const settings = extension_settings[extensionName];
-    
+
     if (!settings.gallery) {
         settings.gallery = [];
     }
@@ -393,7 +397,7 @@ async function generateImage() {
     const settings = extension_settings[extensionName];
     const depth = settings.message_depth || 1;
     const recentMessages = getRecentMessages(depth);
-    
+
     if (recentMessages.length === 0) {
         toastr.warning('No message found to generate image from.', 'Context Image Generation');
         return;
@@ -408,7 +412,7 @@ async function generateImage() {
 
     try {
         const result = await generateImageFromPrompt(lastMsg.text, sender, null);
-        
+
         if (result) {
             const imageDataUrl = `data:${result.mimeType};base64,${result.imageData}`;
             $('#cig_preview_image').attr('src', imageDataUrl);
@@ -427,7 +431,7 @@ async function generateImage() {
 
 async function cigMessageButton($icon) {
     const context = getContext();
-    
+
     if ($icon.hasClass('cig_busy')) {
         console.log('[CIG] Already generating...');
         return;
@@ -501,7 +505,7 @@ async function cigMessageButton($icon) {
 
 async function slashCommandHandler(args, prompt) {
     const trimmedPrompt = String(prompt).trim();
-    
+
     if (!trimmedPrompt) {
         toastr.warning('Please provide a prompt for image generation.', 'Context Image Generation');
         return '';
@@ -509,7 +513,7 @@ async function slashCommandHandler(args, prompt) {
 
     try {
         const result = await generateImageFromPrompt(trimmedPrompt, null, null);
-        
+
         if (result) {
             const imageDataUrl = `data:${result.mimeType};base64,${result.imageData}`;
             $('#cig_preview_image').attr('src', imageDataUrl);
@@ -521,14 +525,14 @@ async function slashCommandHandler(args, prompt) {
         console.error(`[${extensionName}] Slash command generation error:`, error);
         toastr.error(`Failed to generate: ${error.message}`, 'Context Image Generation');
     }
-    
+
     return '';
 }
 
 function injectMessageButton(messageId) {
     const messageElement = $(`.mes[mesid="${messageId}"]`);
     if (messageElement.length === 0) return;
-    
+
     const extraButtons = messageElement.find('.extraMesButtons');
     if (extraButtons.length === 0) return;
 
@@ -550,7 +554,7 @@ function injectMessageButton(messageId) {
 }
 
 function injectAllMessageButtons() {
-    $('.mes').each(function() {
+    $('.mes').each(function () {
         const messageId = $(this).attr('mesid');
         if (messageId !== undefined) {
             injectMessageButton(Number(messageId));
@@ -575,7 +579,7 @@ function viewGalleryImage(index) {
     if (!item) return;
 
     const imageUrl = `data:image/png;base64,${item.imageData}`;
-    
+
     const popup = $(`
         <div class="cig_popup_overlay">
             <div class="cig_popup">
@@ -589,7 +593,7 @@ function viewGalleryImage(index) {
         </div>
     `);
 
-    popup.on('click', '.cig_popup_close, .cig_popup_overlay', function(e) {
+    popup.on('click', '.cig_popup_close, .cig_popup_overlay', function (e) {
         if (e.target === this || $(e.target).hasClass('cig_popup_close')) {
             popup.remove();
         }
@@ -607,7 +611,7 @@ function deleteGalleryImage(index) {
 
 jQuery(async () => {
     console.log(`[${extensionName}] Initializing extension...`);
-    
+
     try {
         const response = await fetch(`/scripts/extensions/third-party/${extensionName}/settings.html`);
         if (!response.ok) throw new Error(`Failed to load template: ${response.status}`);
@@ -676,18 +680,18 @@ jQuery(async () => {
     $('#cig_generate_btn').on('click', generateImage);
     $('#cig_clear_gallery').on('click', clearGallery);
 
-    $(document).on('click', '.cig_gallery_item img', function() {
+    $(document).on('click', '.cig_gallery_item img', function () {
         const index = $(this).closest('.cig_gallery_item').data('index');
         viewGalleryImage(index);
     });
 
-    $(document).on('click', '.cig_gallery_delete', function(e) {
+    $(document).on('click', '.cig_gallery_delete', function (e) {
         e.stopPropagation();
         const index = $(this).data('index');
         deleteGalleryImage(index);
     });
 
-    $(document).on('click', '.cig_message_gen', function(e) {
+    $(document).on('click', '.cig_message_gen', function (e) {
         cigMessageButton($(e.currentTarget));
     });
 
