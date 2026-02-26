@@ -5,7 +5,7 @@ A SillyTavern extension that adds Gemini-powered image generation with character
 ## What's New in v1.3.2
 
 - **Thinking Level** - Control how much the model "thinks" before generating (Auto, Minimal, Low, Medium, High) — Flash 2 only
-- **Google Search** - Let the model search the web for reference images and information before generating — Flash 2 only
+- **Google Search** - Let the model search the web for reference images and information before generating — Flash 2 only (I dont know if it work, ive ot be able to verify it actually work, but it doe send a requet to the api, may not work on Openrouter)
 - **Updated System Prompt** - Default prompt now mentions internet search capabilities
 
 ## What's New in v1.3.1
