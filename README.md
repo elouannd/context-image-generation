@@ -2,6 +2,10 @@
 
 A SillyTavern extension that adds Gemini-powered image generation with character context and avatar references.
 
+## What's New in v1.3
+
+- **Nano Banana 2 (Flash)** - Added `gemini-3.1-flash-image-preview` as a new model option
+
 ## What's New in v1.2
 
 - **Provider Selection** - Choose between Google AI Studio or OpenRouter
@@ -29,6 +33,7 @@ A SillyTavern extension that adds Gemini-powered image generation with character
 - Google AI Studio API key OR OpenRouter API key configured in SillyTavern
 - A Gemini model with image generation capability:
   - `Nano Banana 🍌` (Flash) - Faster, cheaper (~$0.04/image)
+  - `Nano Banana 2 🍌` (Flash) - Gemini 3.1 Flash
   - `Nano Banana Pro 🍌` (Pro) - Higher quality, 4K support (~$0.14/image)
 
 ## Installation
@@ -63,7 +68,7 @@ Aliases: `/proimg`, `/geminiimg`
 | Setting | Description |
 |---------|-------------|
 | Provider | Google AI Studio or OpenRouter |
-| Model | Flash (~$0.04) or Pro (~$0.14) |
+| Model | Flash (~$0.04), Flash 2 (Gemini 3.1), or Pro (~$0.14) |
 | Aspect Ratio | 1:1, 3:4, 4:3, 9:16, or 16:9 |
 | Image Size | Pro only: Default, 1K, 2K, or 4K |
 | Message Depth | Number of messages to include as context (1-10) |
