@@ -2,7 +2,7 @@
  * Context Image Generation 🍌
  * Gemini-powered image generation with avatar references and character context
  * Uses SillyTavern's backend to handle Google AI authentication
- * Version 1.2.1
+ * Version 1.3.0
  */
 
 import {
@@ -33,10 +33,12 @@ const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
 const PROVIDER_MODELS = {
     makersuite: {
         flash: { id: 'gemini-2.5-flash-image', name: 'Nano Banana 🍌 (~$0.04/img)' },
+        flash2: { id: 'gemini-3.1-flash-image-preview', name: 'Nano Banana 2 🍌 (Flash)' },
         pro: { id: 'gemini-3-pro-image-preview', name: 'Nano Banana Pro 🍌 (~$0.14/img)' },
     },
     openrouter: {
         flash: { id: 'google/gemini-2.5-flash-image-preview', name: 'Nano Banana 🍌 (OpenRouter)' },
+        flash2: { id: 'google/gemini-3.1-flash-image-preview', name: 'Nano Banana 2 🍌 (OpenRouter)' },
         pro: { id: 'google/gemini-3-pro-image-preview', name: 'Nano Banana Pro 🍌 (OpenRouter)' },
     },
 };
@@ -65,6 +67,7 @@ function updateModelDropdown() {
     $modelSelect.empty();
 
     $modelSelect.append(`<option value="${models.flash.id}">${models.flash.name}</option>`);
+    $modelSelect.append(`<option value="${models.flash2.id}">${models.flash2.name}</option>`);
     $modelSelect.append(`<option value="${models.pro.id}">${models.pro.name}</option>`);
 
     // Try to maintain model type selection when switching providers
@@ -72,6 +75,9 @@ function updateModelDropdown() {
     if (currentModel.includes('pro') || currentModel.includes('3-pro')) {
         $modelSelect.val(models.pro.id);
         settings.model = models.pro.id;
+    } else if (currentModel.includes('3.1') || currentModel.includes('3-1')) {
+        $modelSelect.val(models.flash2.id);
+        settings.model = models.flash2.id;
     } else {
         $modelSelect.val(models.flash.id);
         settings.model = models.flash.id;
@@ -104,7 +110,7 @@ async function loadSettings() {
 
 function toggleImageSizeVisibility() {
     const model = extension_settings[extensionName].model;
-    const isProModel = /gemini-3|3-pro/.test(model);
+    const isProModel = /gemini-3|3-pro|3\.1/.test(model);
     $('#cig_image_size_container').toggle(isProModel);
 }
 
