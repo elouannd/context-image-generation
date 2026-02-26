@@ -2,6 +2,12 @@
 
 A SillyTavern extension that adds Gemini-powered image generation with character context and avatar references.
 
+## What's New in v1.3.2
+
+- **Thinking Level** - Control how much the model "thinks" before generating (Auto, Minimal, Low, Medium, High) — Flash 2 only
+- **Google Search** - Let the model search the web for reference images and information before generating — Flash 2 only
+- **Updated System Prompt** - Default prompt now mentions internet search capabilities
+
 ## What's New in v1.3.1
 
 - **Expanded Image Sizes** - Added support for 512px to 4K resolutions for Nano Banana 2 (Flash)
@@ -75,6 +81,8 @@ Aliases: `/proimg`, `/geminiimg`
 | Model | Flash (~$0.04), Flash 2 (Gemini 3.1), or Pro (~$0.14) |
 | Aspect Ratio | 1:1, 3:4, 4:3, 9:16, or 16:9 |
 | Image Size | Pro: Default, 1K, 2K, 4K <br> Flash 2: Default, 512px, 1K, 2K, 4K |
+| Thinking Level | Flash 2 only: Auto, Minimal, Low, Medium, High |
+| Google Search | Flash 2 only: Enable web search for references |
 | Message Depth | Number of messages to include as context (1-10) |
 | Use Avatar References | Include character/user avatars as visual references |
 | Include Descriptions | Add character descriptions to the prompt |

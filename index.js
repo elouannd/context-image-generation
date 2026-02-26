@@ -2,7 +2,7 @@
  * Context Image Generation 🍌
  * Gemini-powered image generation with avatar references and character context
  * Uses SillyTavern's backend to handle Google AI authentication
- * Version 1.3.1
+ * Version 1.3.2
  */
 
 import {
@@ -48,11 +48,13 @@ const defaultSettings = {
     model: 'gemini-2.5-flash-image',
     aspect_ratio: '1:1',
     image_size: '',
+    thinking_level: 'auto',
+    use_google_search: false,
     use_avatars: false,
     include_descriptions: false,
     use_previous_image: false,
     message_depth: 1,
-    system_instruction: 'You are an image generation assistant. When reference images are provided, they represent the characters in the story. Generate an illustration that depicts the scene described in the prompt while maintaining the art style and appearance of the reference characters. You are not obligated to include both characters - if the scene depicts only one character alone, illustrate them alone.',
+    system_instruction: 'You are an image generation assistant. When reference images are provided, they represent the characters in the story. Generate an illustration that depicts the scene described in the prompt while maintaining the art style and appearance of the reference characters. You are not obligated to include both characters - if the scene depicts only one character alone, illustrate them alone. When available, you can use the internet to search for reference pictures and information to improve the accuracy and quality of your generations.',
     gallery: [],
 };
 
@@ -103,6 +105,8 @@ async function loadSettings() {
     $('#cig_model').val(extension_settings[extensionName].model);
     $('#cig_aspect_ratio').val(extension_settings[extensionName].aspect_ratio);
     $('#cig_image_size').val(extension_settings[extensionName].image_size);
+    $('#cig_thinking_level').val(extension_settings[extensionName].thinking_level);
+    $('#cig_use_google_search').prop('checked', extension_settings[extensionName].use_google_search);
     $('#cig_use_avatars').prop('checked', extension_settings[extensionName].use_avatars);
     $('#cig_include_descriptions').prop('checked', extension_settings[extensionName].include_descriptions);
     $('#cig_use_previous_image').prop('checked', extension_settings[extensionName].use_previous_image);
@@ -119,6 +123,7 @@ function toggleImageSizeVisibility() {
     const isFlash2Model = /gemini-3\.1/.test(model);
     const isSizeSupported = isProModel || isFlash2Model;
     $('#cig_image_size_container').toggle(isSizeSupported);
+    $('#cig_flash2_options').toggle(isFlash2Model);
 
     if (isSizeSupported) {
         updateSizeDropdown(model, isFlash2Model);
@@ -333,6 +338,8 @@ async function generateImageFromPrompt(prompt, sender = null, messageId = null) 
     const settings = extension_settings[extensionName];
     const messages = await buildMessages(prompt, sender, messageId);
 
+    const isFlash2 = /gemini-3\.1/.test(settings.model);
+
     const requestBody = {
         chat_completion_source: settings.provider || 'makersuite',
         model: settings.model,
@@ -347,6 +354,17 @@ async function generateImageFromPrompt(prompt, sender = null, messageId = null) 
         reverse_proxy: oai_settings.reverse_proxy || '',
         proxy_password: oai_settings.proxy_password || '',
     };
+
+    // Flash 2 specific options
+    if (isFlash2) {
+        const thinkingLevel = settings.thinking_level || 'auto';
+        if (thinkingLevel !== 'auto') {
+            requestBody.reasoning_effort = thinkingLevel;
+        }
+        if (settings.use_google_search) {
+            requestBody.enable_web_search = true;
+        }
+    }
 
     console.log(`[${extensionName}] Generating image with provider: ${settings.provider}, model:`, settings.model);
 
@@ -691,6 +709,16 @@ jQuery(async () => {
 
     $('#cig_image_size').on('change', function () {
         extension_settings[extensionName].image_size = $(this).val();
+        saveSettingsDebounced();
+    });
+
+    $('#cig_thinking_level').on('change', function () {
+        extension_settings[extensionName].thinking_level = $(this).val();
+        saveSettingsDebounced();
+    });
+
+    $('#cig_use_google_search').on('change', function () {
+        extension_settings[extensionName].use_google_search = $(this).prop('checked');
         saveSettingsDebounced();
     });
 

@@ -58,6 +58,29 @@
                 </div>
             </div>
 
+            <!-- Flash 2 Options (Thinking Level & Google Search) -->
+            <div id="cig_flash2_options" style="display: none;">
+                <div class="flex-container">
+                    <div class="flex1">
+                        <label for="cig_thinking_level">Thinking Level</label>
+                        <select id="cig_thinking_level" class="cig-setting">
+                            <option value="auto">Auto</option>
+                            <option value="minimal">Minimal</option>
+                            <option value="low">Low</option>
+                            <option value="medium">Medium</option>
+                            <option value="high">High</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="flex-container flexFlowColumn">
+                    <label class="checkbox_label"
+                        title="Allow the model to search Google for references before generating">
+                        <input type="checkbox" id="cig_use_google_search" class="cig-setting" />
+                        <span>Use Google Search</span>
+                    </label>
+                </div>
+            </div>
+
             <!-- Message Depth -->
             <div class="flex-container">
                 <div class="flex1">
