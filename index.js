@@ -2,7 +2,7 @@
  * Context Image Generation 🍌
  * Gemini-powered image generation with avatar references and character context
  * Uses SillyTavern's backend to handle Google AI authentication
- * Version 1.3.0
+ * Version 1.3.1
  */
 
 import {
@@ -82,6 +82,11 @@ function updateModelDropdown() {
         $modelSelect.val(models.flash.id);
         settings.model = models.flash.id;
     }
+
+    // Update size dropdown based on selected model
+    if (typeof toggleImageSizeVisibility === 'function') {
+        toggleImageSizeVisibility();
+    }
 }
 
 async function loadSettings() {
@@ -110,8 +115,43 @@ async function loadSettings() {
 
 function toggleImageSizeVisibility() {
     const model = extension_settings[extensionName].model;
-    const isProModel = /gemini-3|3-pro|3\.1/.test(model);
-    $('#cig_image_size_container').toggle(isProModel);
+    const isProModel = /gemini-3-pro/.test(model);
+    const isFlash2Model = /gemini-3\.1/.test(model);
+    const isSizeSupported = isProModel || isFlash2Model;
+    $('#cig_image_size_container').toggle(isSizeSupported);
+
+    if (isSizeSupported) {
+        updateSizeDropdown(model, isFlash2Model);
+    }
+}
+
+function updateSizeDropdown(model, isFlash2Model) {
+    const $sizeSelect = $('#cig_image_size');
+    const currentValue = extension_settings[extensionName].image_size || '';
+
+    $sizeSelect.empty();
+    $sizeSelect.append('<option value="">Default</option>');
+
+    if (isFlash2Model) {
+        $('#cig_image_size_label').text('Image Size (Flash 2)');
+        $sizeSelect.append('<option value="512">512px</option>');
+        $sizeSelect.append('<option value="1K">1K</option>');
+        $sizeSelect.append('<option value="2K">2K</option>');
+        $sizeSelect.append('<option value="4K">4K</option>');
+    } else {
+        $('#cig_image_size_label').text('Image Size (Pro only)');
+        $sizeSelect.append('<option value="1K">1K</option>');
+        $sizeSelect.append('<option value="2K">2K</option>');
+        $sizeSelect.append('<option value="4K">4K</option>');
+    }
+
+    // Select previous if exists, otherwise Default
+    if ($sizeSelect.find(`option[value="${currentValue}"]`).length > 0) {
+        $sizeSelect.val(currentValue);
+    } else {
+        $sizeSelect.val('');
+        extension_settings[extensionName].image_size = '';
+    }
 }
 
 async function getUserAvatar() {
