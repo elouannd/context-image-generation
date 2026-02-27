@@ -2,6 +2,10 @@
 
 A SillyTavern extension that adds Gemini-powered image generation with character context and avatar references.
 
+## What's New in v1.3.3
+
+- **Auto Generate** - Automatically generate images when messages are received (Off, Bot messages, or All messages)
+
 ## What's New in v1.3.2
 
 - **Thinking Level** - Control how much the model "thinks" before generating (Auto, Minimal, Low, Medium, High) — Flash 2 only
@@ -83,6 +87,7 @@ Aliases: `/proimg`, `/geminiimg`
 | Image Size | Pro: Default, 1K, 2K, 4K <br> Flash 2: Default, 512px, 1K, 2K, 4K |
 | Thinking Level | Flash 2 only: Auto, Minimal, Low, Medium, High |
 | Google Search | Flash 2 only: Enable web search for references |
+| Auto Generate | Off, Bot messages, or All messages |
 | Message Depth | Number of messages to include as context (1-10) |
 | Use Avatar References | Include character/user avatars as visual references |
 | Include Descriptions | Add character descriptions to the prompt |

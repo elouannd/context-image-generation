@@ -2,7 +2,7 @@
  * Context Image Generation 🍌
  * Gemini-powered image generation with avatar references and character context
  * Uses SillyTavern's backend to handle Google AI authentication
- * Version 1.3.2
+ * Version 1.3.3
  */
 
 import {
@@ -50,6 +50,7 @@ const defaultSettings = {
     image_size: '',
     thinking_level: 'auto',
     use_google_search: false,
+    auto_generate: 'off',
     use_avatars: false,
     include_descriptions: false,
     use_previous_image: false,
@@ -110,6 +111,7 @@ async function loadSettings() {
     $('#cig_use_avatars').prop('checked', extension_settings[extensionName].use_avatars);
     $('#cig_include_descriptions').prop('checked', extension_settings[extensionName].include_descriptions);
     $('#cig_use_previous_image').prop('checked', extension_settings[extensionName].use_previous_image);
+    $('#cig_auto_generate').val(extension_settings[extensionName].auto_generate);
     $('#cig_message_depth').val(extension_settings[extensionName].message_depth);
     $('#cig_system_instruction').val(extension_settings[extensionName].system_instruction);
 
@@ -567,6 +569,28 @@ async function cigMessageButton($icon) {
     }
 }
 
+async function autoGenerateForMessage(messageId) {
+    const settings = extension_settings[extensionName];
+    if (settings.auto_generate === 'off') return;
+
+    const context = getContext();
+    const message = context.chat[messageId];
+    if (!message || !message.mes || message.is_system) return;
+
+    // Check if we should generate for this message type
+    if (settings.auto_generate === 'bot' && message.is_user) return;
+
+    // Wait for the button to be injected, then click it
+    setTimeout(() => {
+        const messageElement = $(`.mes[mesid="${messageId}"]`);
+        const $icon = messageElement.find('.cig_message_gen');
+        if ($icon.length > 0 && !$icon.hasClass('cig_busy')) {
+            console.log(`[${extensionName}] Auto-generating image for message ${messageId}`);
+            cigMessageButton($icon);
+        }
+    }, 200);
+}
+
 async function slashCommandHandler(args, prompt) {
     const trimmedPrompt = String(prompt).trim();
 
@@ -737,6 +761,11 @@ jQuery(async () => {
         saveSettingsDebounced();
     });
 
+    $('#cig_auto_generate').on('change', function () {
+        extension_settings[extensionName].auto_generate = $(this).val();
+        saveSettingsDebounced();
+    });
+
     $('#cig_message_depth').on('change', function () {
         let value = parseInt($(this).val(), 10);
         if (isNaN(value) || value < 1) value = 1;
@@ -777,8 +806,13 @@ jQuery(async () => {
         setTimeout(injectAllMessageButtons, 100);
     });
 
-    eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, () => {
+    eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, (messageId) => {
         setTimeout(injectAllMessageButtons, 100);
+        autoGenerateForMessage(messageId);
+    });
+
+    eventSource.on(event_types.USER_MESSAGE_RENDERED, (messageId) => {
+        autoGenerateForMessage(messageId);
     });
 
     eventSource.on(event_types.CHAT_CREATED, () => {
