@@ -2,7 +2,7 @@
  * Context Image Generation 🍌
  * Gemini-powered image generation with avatar references and character context
  * Uses SillyTavern's backend to handle Google AI authentication
- * Version 1.3.3
+ * Version 1.4.0
  */
 
 import {
@@ -48,9 +48,10 @@ const defaultSettings = {
     model: 'gemini-2.5-flash-image',
     aspect_ratio: '1:1',
     image_size: '',
-    thinking_level: 'auto',
+    thinking_level: 'minimal',
     use_google_search: false,
     auto_generate: 'off',
+    censor_style: 'off',
     use_avatars: false,
     include_descriptions: false,
     use_previous_image: false,
@@ -112,6 +113,7 @@ async function loadSettings() {
     $('#cig_include_descriptions').prop('checked', extension_settings[extensionName].include_descriptions);
     $('#cig_use_previous_image').prop('checked', extension_settings[extensionName].use_previous_image);
     $('#cig_auto_generate').val(extension_settings[extensionName].auto_generate);
+    $('#cig_censor_style').val(extension_settings[extensionName].censor_style);
     $('#cig_message_depth').val(extension_settings[extensionName].message_depth);
     $('#cig_system_instruction').val(extension_settings[extensionName].system_instruction);
 
@@ -359,10 +361,8 @@ async function generateImageFromPrompt(prompt, sender = null, messageId = null) 
 
     // Flash 2 specific options
     if (isFlash2) {
-        const thinkingLevel = settings.thinking_level || 'auto';
-        if (thinkingLevel !== 'auto') {
-            requestBody.reasoning_effort = thinkingLevel;
-        }
+        const thinkingLevel = settings.thinking_level || 'minimal';
+        requestBody.reasoning_effort = thinkingLevel;
         if (settings.use_google_search) {
             requestBody.enable_web_search = true;
         }
@@ -407,6 +407,136 @@ async function generateImageFromPrompt(prompt, sender = null, messageId = null) 
 
     throw new Error('No image was returned by the API');
 }
+
+// ─── NudeNet Auto-Censor ────────────────────────────────────────────────────
+const NUDENET_MODEL_URL = 'https://huggingface.co/vladmandic/nudenet/resolve/main/nudenet.onnx';
+const NUDENET_CENSOR_LABELS = new Set([
+    'FEMALE_BREAST_EXPOSED', 'FEMALE_GENITALIA_EXPOSED',
+    'MALE_GENITALIA_EXPOSED', 'BUTTOCKS_EXPOSED', 'ANUS_EXPOSED',
+]);
+const NUDENET_INPUT_SIZE = 320;
+let _onnxSession = null;  // cached between calls
+
+async function getNudeNetSession() {
+    if (_onnxSession) return _onnxSession;
+
+    // Lazy-load ONNX Runtime Web from CDN
+    if (typeof ort === 'undefined') {
+        await new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.min.js';
+            script.onload = resolve;
+            script.onerror = reject;
+            document.head.appendChild(script);
+        });
+    }
+
+    $('#cig_censor_status').text('Loading NudeNet model…').show();
+    _onnxSession = await ort.InferenceSession.create(NUDENET_MODEL_URL, { executionProviders: ['wasm'] });
+    $('#cig_censor_status').text('NudeNet ready ✓').fadeOut(2000);
+    return _onnxSession;
+}
+
+async function censorImage(base64Data) {
+    const settings = extension_settings[extensionName];
+    const censorStyle = settings.censor_style || 'off';
+    if (censorStyle === 'off') return base64Data;
+
+    try {
+        const session = await getNudeNetSession();
+
+        // Decode base64 → ImageBitmap
+        const img = await createImageBitmap(
+            await fetch(`data:image/png;base64,${base64Data}`).then(r => r.blob()),
+        );
+
+        const origW = img.width;
+        const origH = img.height;
+
+        // Resize to model input size on an offscreen canvas
+        const inputCanvas = new OffscreenCanvas(NUDENET_INPUT_SIZE, NUDENET_INPUT_SIZE);
+        const inputCtx = inputCanvas.getContext('2d');
+        inputCtx.drawImage(img, 0, 0, NUDENET_INPUT_SIZE, NUDENET_INPUT_SIZE);
+        const pixelData = inputCtx.getImageData(0, 0, NUDENET_INPUT_SIZE, NUDENET_INPUT_SIZE).data;
+
+        // Build float32 CHW tensor (normalized 0-1)
+        const tensor = new Float32Array(3 * NUDENET_INPUT_SIZE * NUDENET_INPUT_SIZE);
+        for (let i = 0; i < NUDENET_INPUT_SIZE * NUDENET_INPUT_SIZE; i++) {
+            tensor[i] = pixelData[i * 4] / 255; // R
+            tensor[i + NUDENET_INPUT_SIZE * NUDENET_INPUT_SIZE] = pixelData[i * 4 + 1] / 255; // G
+            tensor[i + 2 * NUDENET_INPUT_SIZE * NUDENET_INPUT_SIZE] = pixelData[i * 4 + 2] / 255; // B
+        }
+
+        const feeds = { input: new ort.Tensor('float32', tensor, [1, 3, NUDENET_INPUT_SIZE, NUDENET_INPUT_SIZE]) };
+        const results = await session.run(feeds);
+
+        // Parse detections — output shape is [N, 6]: x1,y1,x2,y2,score,classId
+        const outputKey = Object.keys(results)[0];
+        const output = results[outputKey].data;
+        const numDetections = output.length / 6;
+
+        const labelMap = [
+            'FEMALE_GENITALIA_COVERED', 'FACE_FEMALE', 'BUTTOCKS_EXPOSED',
+            'FEMALE_BREAST_EXPOSED', 'FEMALE_GENITALIA_EXPOSED', 'MALE_BREAST_EXPOSED',
+            'ANUS_EXPOSED', 'FEET_EXPOSED', 'BELLY_COVERED', 'FEET_COVERED',
+            'ARMPITS_COVERED', 'ARMPITS_EXPOSED', 'FACE_MALE', 'BELLY_EXPOSED',
+            'MALE_GENITALIA_EXPOSED', 'ANUS_COVERED', 'FEMALE_BREAST_COVERED',
+            'BUTTOCKS_COVERED',
+        ];
+
+        // Draw original image then apply censoring on output canvas
+        const outCanvas = new OffscreenCanvas(origW, origH);
+        const outCtx = outCanvas.getContext('2d');
+        outCtx.drawImage(img, 0, 0);
+
+        for (let i = 0; i < numDetections; i++) {
+            const offset = i * 6;
+            const score = output[offset + 4];
+            if (score < 0.4) continue;
+
+            const classId = Math.round(output[offset + 5]);
+            const label = labelMap[classId] || '';
+            if (!NUDENET_CENSOR_LABELS.has(label)) continue;
+
+            // Scale bboxes from model space back to original image dimensions
+            const x1 = Math.floor((output[offset] / NUDENET_INPUT_SIZE) * origW);
+            const y1 = Math.floor((output[offset + 1] / NUDENET_INPUT_SIZE) * origH);
+            const x2 = Math.ceil((output[offset + 2] / NUDENET_INPUT_SIZE) * origW);
+            const y2 = Math.ceil((output[offset + 3] / NUDENET_INPUT_SIZE) * origH);
+            const bw = x2 - x1;
+            const bh = y2 - y1;
+
+            if (censorStyle === 'blur') {
+                outCtx.filter = `blur(${Math.max(10, Math.floor(bw / 6))}px)`;
+                outCtx.drawImage(img, x1, y1, bw, bh, x1, y1, bw, bh);
+                outCtx.filter = 'none';
+            } else {
+                // Pixelate: shrink then scale up
+                const blockSize = Math.max(12, Math.floor(bw / 8));
+                const tmpCanvas = new OffscreenCanvas(bw, bh);
+                const tmpCtx = tmpCanvas.getContext('2d');
+                tmpCtx.drawImage(img, x1, y1, bw, bh, 0, 0, Math.ceil(bw / blockSize), Math.ceil(bh / blockSize));
+                outCtx.imageSmoothingEnabled = false;
+                outCtx.drawImage(tmpCanvas, 0, 0, Math.ceil(bw / blockSize), Math.ceil(bh / blockSize), x1, y1, bw, bh);
+                outCtx.imageSmoothingEnabled = true;
+            }
+        }
+
+        // Export censored image back to base64
+        const blob = await outCanvas.convertToBlob({ type: 'image/png' });
+        const reader = new FileReader();
+        return await new Promise((resolve) => {
+            reader.onload = () => resolve(reader.result.split(',')[1]);
+            reader.readAsDataURL(blob);
+        });
+
+    } catch (error) {
+        console.warn(`[${extensionName}] NudeNet censoring failed, using original image:`, error);
+        $('#cig_censor_status').text('Auto-censor failed (using original)').show().delay(3000).fadeOut();
+        return base64Data;
+    }
+}
+// ────────────────────────────────────────────────────────────────────────────
 
 function addToGallery(imageData, prompt, messageId = null) {
     const settings = extension_settings[extensionName];
@@ -480,10 +610,11 @@ async function generateImage() {
         const result = await generateImageFromPrompt(lastMsg.text, sender, null);
 
         if (result) {
-            const imageDataUrl = `data:${result.mimeType};base64,${result.imageData}`;
+            const censoredData = await censorImage(result.imageData);
+            const imageDataUrl = `data:${result.mimeType};base64,${censoredData}`;
             $('#cig_preview_image').attr('src', imageDataUrl);
             $('#cig_preview_container').show();
-            addToGallery(result.imageData, lastMsg.text, null);
+            addToGallery(censoredData, lastMsg.text, null);
         }
 
     } catch (error) {
@@ -529,8 +660,9 @@ async function cigMessageButton($icon) {
         const result = await generateImageFromPrompt(prompt, sender, messageId);
 
         if (result) {
+            const censoredData = await censorImage(result.imageData);
             const fileName = `cig_${Date.now()}`;
-            const filePath = await saveBase64AsFile(result.imageData, extensionName, fileName, 'png');
+            const filePath = await saveBase64AsFile(censoredData, extensionName, fileName, 'png');
             console.log(`[${extensionName}] Image saved to:`, filePath);
 
             if (!message.extra || typeof message.extra !== 'object') {
@@ -558,7 +690,7 @@ async function cigMessageButton($icon) {
 
             appendMediaToMessage(message, messageElement, SCROLL_BEHAVIOR.KEEP);
             await saveChatConditional();
-            addToGallery(result.imageData, prompt, messageId);
+            addToGallery(censoredData, prompt, messageId);
         }
 
     } catch (error) {
@@ -763,6 +895,11 @@ jQuery(async () => {
 
     $('#cig_auto_generate').on('change', function () {
         extension_settings[extensionName].auto_generate = $(this).val();
+        saveSettingsDebounced();
+    });
+
+    $('#cig_censor_style').on('change', function () {
+        extension_settings[extensionName].censor_style = $(this).val();
         saveSettingsDebounced();
     });
 
