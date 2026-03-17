@@ -64,8 +64,11 @@
                     <div class="flex1">
                         <label for="cig_thinking_level">Thinking Level</label>
                         <select id="cig_thinking_level" class="cig-setting">
-                            <option value="minimal">Minimal (Faster)</option>
-                            <option value="high">High (Better Quality)</option>
+                            <option value="auto">Auto</option>
+                            <option value="minimal">Minimal</option>
+                            <option value="low">Low</option>
+                            <option value="medium">Medium</option>
+                            <option value="high">High</option>
                         </select>
                     </div>
                 </div>
@@ -117,19 +120,6 @@
                     </select>
                 </div>
             </div>
-
-            <!-- Auto-Censor (NudeNet) -->
-            <div class="flex-container">
-                <div class="flex1">
-                    <label for="cig_censor_style">Auto-Censor</label>
-                    <select id="cig_censor_style" class="cig-setting">
-                        <option value="off">Off</option>
-                        <option value="blur">Blur</option>
-                        <option value="pixelate">Pixelate</option>
-                    </select>
-                </div>
-            </div>
-            <div id="cig_censor_status" class="cig_censor_status" style="display: none;"></div>
 
             <!-- System Instruction -->
             <div class="flex-container flexFlowColumn">

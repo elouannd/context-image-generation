@@ -2,11 +2,6 @@
 
 A SillyTavern extension that adds Gemini-powered image generation with character context and avatar references.
 
-## What's New in v1.4.0
-
-- **Simplified Thinking Level** - Flash 2 now offers only Minimal (faster) and High (better quality)
-- **Auto-Censor (NudeNet)** - Automatically blur or pixelate NSFW regions in generated images, running entirely in-browser via ONNX Runtime Web (no server or API key needed, model loads on first use)
-
 ## What's New in v1.3.3
 
 - **Auto Generate** - Automatically generate images when messages are received (Off, Bot messages, or All messages)
