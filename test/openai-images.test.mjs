@@ -23,3 +23,18 @@ test('TokenReply Grok uses the adapter payload without an assumed size or resolu
         { model: 'grok-imagine-image', prompt: 'scene', n: 1, response_format: 'b64_json' },
     );
 });
+test('dynamic LinkAPI gpt-image and dall-e fallbacks preserve a size payload', () => {
+    for (const modelId of ['gpt-image-1', 'dall-e-3']) {
+        const model = getModelDefinition('linkapi', modelId);
+        assert.deepEqual(
+            buildOpenAiImagesRequest({
+                model: model.id,
+                prompt: 'scene',
+                size: model.supportsSize ? '1536x1024' : undefined,
+                responseFormat: 'b64_json',
+            }),
+            { model: modelId, prompt: 'scene', n: 1, size: '1536x1024', response_format: 'b64_json' },
+            modelId,
+        );
+    }
+});

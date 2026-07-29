@@ -25,7 +25,7 @@ import { MEDIA_DISPLAY, MEDIA_SOURCE, MEDIA_TYPE, SCROLL_BEHAVIOR, SWIPE_DIRECTI
 import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
 import { SlashCommand } from '../../../slash-commands/SlashCommand.js';
 import { ARGUMENT_TYPE, SlashCommandArgument } from '../../../slash-commands/SlashCommandArgument.js';
-import { getModelDefinition, getProviderDefinition, resolveTransport } from './lib/providers/registry.js';
+import { getModelDefinition, resolveProviderRoute } from './lib/providers/registry.js';
 import { buildOpenAiImagesRequest, parseOpenAiImagesResponse } from './lib/providers/openai-images.js';
 import { buildGeminiProxyRequest } from './lib/providers/gemini-proxy.js';
 
@@ -694,35 +694,21 @@ async function generateImageFromPrompt(prompt, sender = null, messageId = null) 
     const messages = await buildMessages(prompt, sender, messageId);
     const selectedProvider = settings.provider || 'makersuite';
 
+    const providerRoute = resolveProviderRoute(selectedProvider, settings.model);
+
     if (selectedProvider === 'linkapi' && settings.linkapi_use_legacy_routing === true) {
         return await generateLegacyLinkApiImage(settings, messages);
     }
 
-    if (selectedProvider === 'tokenreply') {
-        const transport = resolveTransport(selectedProvider, settings.model);
-        const provider = getProviderDefinition(selectedProvider);
-
-        if (transport === 'openAiImages') {
-            return await requestOpenAiImages({
-                apiKey: getProviderApiKey(settings, selectedProvider),
-                model: settings.model,
-                prompt: extractPromptText(messages),
-                baseUrl: provider.transports.openAiImages.baseUrl,
-            });
-        }
-
-        throw new Error(`No TokenReply transport is configured for model: ${settings.model}`);
-    }
-
-    if (selectedProvider === 'linkapi') {
-        const transport = resolveTransport(selectedProvider, settings.model);
-        const provider = getProviderDefinition(selectedProvider);
+    if (providerRoute.provider && providerRoute.transport) {
+        const { provider, model, transport } = providerRoute;
+        const apiKey = getProviderApiKey(settings, selectedProvider);
 
         if (transport === 'sillyTavernGeminiProxy') {
             const requestBody = buildGeminiProxyRequest({
                 model: settings.model,
                 messages,
-                apiKey: getProviderApiKey(settings, 'linkapi'),
+                apiKey,
                 baseUrl: provider.transports.sillyTavernGeminiProxy.baseUrl,
                 aspectRatio: settings.aspect_ratio,
                 imageSize: settings.image_size,
@@ -734,19 +720,21 @@ async function generateImageFromPrompt(prompt, sender = null, messageId = null) 
         }
 
         if (transport === 'openAiImages') {
-            const modelDefinition = getModelDefinition(selectedProvider, settings.model);
             return await requestOpenAiImages({
-                apiKey: getProviderApiKey(settings, 'linkapi'),
+                apiKey,
                 model: settings.model,
                 prompt: extractPromptText(messages),
-                size: modelDefinition?.supportsSize ? mapAspectRatioToSize(settings.aspect_ratio) : undefined,
+                size: model.supportsSize ? mapAspectRatioToSize(settings.aspect_ratio) : undefined,
                 baseUrl: provider.transports.openAiImages.baseUrl,
             });
         }
 
-        throw new Error(`No LinkAPI transport is configured for model: ${settings.model}`);
+        throw new Error(`No ${provider.id} handler is configured for transport: ${transport}`);
     }
 
+    if (providerRoute.provider) {
+        throw new Error(`No ${providerRoute.provider.id} transport is configured for model: ${settings.model}`);
+    }
     const isFlash2 = /gemini-3\.1/.test(settings.model);
     const requestBody = {
         chat_completion_source: selectedProvider,

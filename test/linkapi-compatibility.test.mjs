@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 test('keeps a named legacy LinkAPI path and a new adapter dispatch path', async () => {
     const source = await readFile(new URL('../index.js', import.meta.url), 'utf8');
     assert.match(source, /async function generateLegacyLinkApiImage/);
-    assert.match(source, /resolveTransport\(selectedProvider, settings\.model\)/);
+    assert.match(source, /resolveProviderRoute\(selectedProvider, settings\.model\)/);
     assert.match(source, /buildGeminiProxyRequest/);
 });
 test('migrates LinkAPI credentials and exposes a manual-only legacy recovery switch', async () => {

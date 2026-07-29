@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { getModelDefinition, getProviderDefinition, resolveTransport } from '../lib/providers/registry.js';
+import { PROVIDERS, getModelDefinition, getProviderDefinition, resolveProviderRoute, resolveTransport } from '../lib/providers/registry.js';
 
 test('routes LinkAPI Gemini and OpenAI image models by model contract', () => {
     assert.equal(resolveTransport('linkapi', 'gemini-2.5-flash-image'), 'sillyTavernGeminiProxy');
@@ -39,7 +39,7 @@ test('exposes TokenReply as an experimental built-in profile with no model disco
 
     assert.match(settings, /value="tokenreply">TokenReply \(Experimental\)<\/option>/);
     assert.match(settings, /https:\/\/api\.tokenreply\.com\/v1\/images\/generations/);
-    assert.match(index, /selectedProvider === 'tokenreply'/);
+    assert.match(index, /resolveProviderRoute\(selectedProvider, settings\.model\)/);
     assert.match(index, /baseUrl: provider\.transports\.openAiImages\.baseUrl/);
     assert.doesNotMatch(index, /fetchTokenReplyModels/);
 });
@@ -53,4 +53,37 @@ test('hides both unsupported reference controls for TokenReply while retaining t
     assert.match(settings, /id="cig_previous_image_reference_option"/);
     assert.match(index, /\$\('#cig_avatar_reference_option'\)\.toggle\(!isTokenReply\)/);
     assert.match(index, /\$\('#cig_previous_image_reference_option'\)\.toggle\(!isTokenReply\)/);
+});
+test('resolves a declarative OpenAI Images fixture without a provider-name branch', async () => {
+    PROVIDERS.fixture = {
+        id: 'fixture',
+        credentialKey: 'fixture',
+        transports: { openAiImages: { baseUrl: 'https://fixture.example/v1' } },
+        models: [{ id: 'fixture-image', transport: 'openAiImages', supportsReferenceImages: false, status: 'fixture' }],
+    };
+
+    try {
+        const route = resolveProviderRoute('fixture', 'fixture-image');
+        assert.equal(route.transport, 'openAiImages');
+        assert.equal(route.provider.transports.openAiImages.baseUrl, 'https://fixture.example/v1');
+        assert.equal(route.model.id, 'fixture-image');
+    } finally {
+        delete PROVIDERS.fixture;
+    }
+
+    const index = await readFile(new URL('../index.js', import.meta.url), 'utf8');
+    const start = index.indexOf('async function generateImageFromPrompt');
+    const end = index.indexOf('// Resolve the <img> src', start);
+    const generation = index.slice(start, end);
+    assert.match(generation, /const providerRoute = resolveProviderRoute\(selectedProvider, settings\.model\);/);
+    assert.doesNotMatch(generation, /selectedProvider === 'tokenreply'/);
+});
+
+test('gives dynamic LinkAPI gpt-image and dall-e models explicit image capabilities', () => {
+    for (const modelId of ['gpt-image-1', 'dall-e-3']) {
+        const model = getModelDefinition('linkapi', modelId);
+        assert.equal(model.transport, 'openAiImages', modelId);
+        assert.equal(model.supportsSize, true, modelId);
+        assert.equal(model.supportsReferenceImages, false, modelId);
+    }
 });
