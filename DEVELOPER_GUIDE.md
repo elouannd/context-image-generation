@@ -19,13 +19,16 @@ The manifest version is **1.7.1**. Treat the version comment at the top of `inde
 
 | File | Responsibility |
 | --- | --- |
-| `index.js` | All extension behavior: settings, prompt construction, provider routing, gallery, message controls, auto-generation, and slash commands. |
-| `settings.html` | The extension's settings drawer, including the LinkAPI key and model-fetch control. |
+| `index.js` | SillyTavern integration: settings, prompt construction, adapter dispatch, gallery, message controls, auto-generation, and slash commands. |
+| `lib/providers/registry.js` | Curated provider/model metadata and adapter transport selection. |
+| `lib/providers/openai-images.js` | Pure OpenAI Images request/response helpers. |
+| `lib/providers/gemini-proxy.js` | Pure Gemini-compatible SillyTavern proxy request builder. |
+| `settings.html` | The extension's settings drawer, including provider credentials, LinkAPI recovery, and model controls. |
 | `style.css` | Settings, gallery, and image UI styling. |
 | `manifest.json` | SillyTavern extension entry point and published metadata. |
 | `README.md` | User-facing installation and feature reference. Keep it concise; put maintainer details here. |
 
-There is currently no package manifest. The focused Node built-in regression test lives in `test/avatar-toggle.contract.test.mjs`; run it with `node --test test/avatar-toggle.contract.test.mjs`.
+There is currently no package manifest. Node built-in contract tests live in `test/`; run them with `node --test test/*.test.mjs`.
 
 ## Runtime model
 
@@ -36,7 +39,7 @@ SillyTavern loads `index.js` as a browser-side extension. At initialization it:
 3. Migrates retired split `use_char_avatar` and `use_user_avatar` settings back to one `use_avatars` setting; either prior enabled preference enables the combined setting.
 4. Wires settings events, message controls, slash commands, and chat events.
 
-Settings are saved through SillyTavern's `saveSettingsDebounced()`. The LinkAPI key is therefore stored with the user's SillyTavern extension settings; it is not persisted by this repository or sent to a separate extension server.
+Settings are saved through SillyTavern's `saveSettingsDebounced()`. Provider credentials are stored in `provider_keys` within the user's SillyTavern extension settings; they are not persisted by this repository or sent to a separate extension server. The compatibility migration creates `provider_keys` when absent and copies a non-empty legacy `linkapi_key` to `provider_keys.linkapi`. Editing the LinkAPI credential mirrors it to both locations during this release, so rollback to the pre-adapter version remains possible.
 
 `fetchedLinkApiModels` is deliberately memory-only. The selected fetched model is retained in settings, and `updateModelDropdown()` re-adds that selected `gpt-image*`/`dall-e*` model after a reload so it does not silently fall back to a Gemini model.
 
@@ -48,12 +51,13 @@ Settings are saved through SillyTavern's `saveSettingsDebounced()`. The LinkAPI 
 | --- | --- | --- | --- |
 | Google AI Studio (`makersuite`) | SillyTavern `/api/backends/chat-completions/generate` | Active SillyTavern provider configuration | Supported by the normal multimodal message path. |
 | OpenRouter | Same SillyTavern backend route | Active SillyTavern provider configuration | Supported by the normal multimodal message path. |
-| LinkAPI + Gemini image model | Same SillyTavern backend route, forced to `chat_completion_source: 'makersuite'` | Per-extension LinkAPI key as `proxy_password`; `reverse_proxy: 'https://api.linkapi.ai'` | Supported by the normal multimodal message path. |
-| LinkAPI + `gpt-image*` or `dall-e*` model | Direct browser `POST` to `https://linkapi.ai/v1/images/generations` | Per-extension LinkAPI bearer token | **Not supported.** All built messages are reduced to plain text. |
+| LinkAPI + Gemini image model | `sillyTavernGeminiProxy`: Same SillyTavern backend route, forced to `chat_completion_source: 'makersuite'` | Per-provider LinkAPI key as `proxy_password`; `reverse_proxy: 'https://api.linkapi.ai'` | Supported by the normal multimodal message path. |
+| LinkAPI + `gpt-image*` or `dall-e*` model | `openAiImages`: direct browser `POST` to `https://linkapi.ai/v1/images/generations` | Per-provider LinkAPI bearer token | **Not supported.** All built messages are reduced to plain text. |
+| TokenReply + `grok-imagine-image` | `openAiImages`: direct browser `POST` to `https://api.tokenreply.com/v1/images/generations` | Per-provider TokenReply bearer token | **Not supported.** Experimental; minimal text-only payload omits image size. |
 
 The LinkAPI Gemini route is intentionally shaped as a Gemini/MakerSuite request because LinkAPI provides a Gemini-compatible proxy. Do not change the active chat-completion profile to make this work; the request-specific `reverse_proxy` and `proxy_password` overrides are the isolation boundary.
 
-The direct OpenAI Images route uses `{ model, prompt, n: 1, size, response_format: 'b64_json' }`. It accepts either `b64_json` or a returned URL; a returned URL is fetched and converted to base64 before the extension continues.
+The direct OpenAI Images route uses `{ model, prompt, n: 1, response_format: 'b64_json' }`, adding `size` only when the curated model metadata explicitly permits it. It accepts either `b64_json` or a returned URL; a returned URL is fetched and converted to base64 before the extension continues. TokenReply deliberately has no size metadata until live evidence confirms its accepted field.
 
 ### Important endpoint distinction
 
@@ -98,6 +102,13 @@ The gallery is limited to `MAX_GALLERY_SIZE` (50). Prompt text is rendered with 
 4. When adding a model family, decide whether it is Gemini-compatible or an OpenAI Images API model. Update routing, UI constraints, and this guide as a single change.
 5. Keep `README.md` user-oriented. Update this guide for architecture, safety, or future-maintenance decisions.
 
+## Rollback and provider-status procedure
+
+`provider-adapter-baseline-v1.7.1` is the known-good pre-adapter baseline tag. If a provider-adapter regression needs recovery, first preserve any user settings and local work, then deploy or restore that explicit baseline through the normal Git/SillyTavern workflow. Do not delete `provider_keys`: the compatibility release continues to mirror the LinkAPI credential to `linkapi_key` for this rollback path.
+
+The advanced **Use legacy LinkAPI routing** checkbox is a narrower runtime recovery option. It must be enabled by the user before a new generation and is not a retry mechanism. Keep it manual to avoid duplicate paid requests.
+
+TokenReply remains **Experimental** until one successful non-production test-key generation is recorded. That record must identify the actual accepted image-size/resolution field (or confirm neither), supported response shape, route, invalid-key behavior, and reload persistence, without including any credential or image payload. Only then may its catalog status change to **Verified**.
 ## Verification checklist
 
 No live-provider request was performed while writing this document. Before claiming a provider change works, verify it with a non-production test key in SillyTavern:
@@ -107,9 +118,11 @@ No live-provider request was performed while writing this document. Before claim
 - With LinkAPI selected, save a key, fetch models, reload SillyTavern, and confirm a selected fetched model remains selected.
 - Generate once with a LinkAPI Gemini model and confirm the request uses the SillyTavern backend path with the LinkAPI proxy override.
 - Generate once with a LinkAPI `gpt-image*`/`dall-e*` model and confirm a browser request reaches the direct Images API path and produces an attached image.
+- Enable LinkAPI's advanced legacy-routing switch, deliberately perform one manual recovery generation, then disable it again; confirm no failed normal request triggers it automatically.
+- With a non-production TokenReply key, generate once with `grok-imagine-image`. Record the accepted size/resolution field and returned image shape before changing its Experimental status.
 - Confirm the text-only UI notice is visible for the direct Images API model, and avatar references do not enter that request.
 - Confirm both a newly generated file-backed gallery item and an existing legacy base64 gallery item can display and serve as a previous-image reference.
-- Exercise an invalid or missing LinkAPI key and confirm the error is surfaced without revealing the key.
+- Exercise an invalid or missing key for both LinkAPI and TokenReply and confirm the error is surfaced without revealing either key.
 
 ## Historical implementation milestones
 

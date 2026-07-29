@@ -1,8 +1,10 @@
 # Context Image Generation 🍌
 
-A SillyTavern extension that adds Gemini-powered image generation with character context and avatar references.
+A SillyTavern extension that adds scene-image generation with character context and avatar references.
 
 For provider routing, maintenance guidance, security boundaries, and a verification checklist, see [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md).
+
+Provider availability and evidence status are tracked in [docs/PROVIDER_CATALOG.md](docs/PROVIDER_CATALOG.md). TokenReply is currently experimental.
 
 > **Fork notice** — This is a fork of [elouannd/context-image-generation](https://github.com/elouannd/context-image-generation) by **Elouann**. It was forked to add **LinkAPI provider support** (routing image generation through LinkAPI's Gemini-compatible endpoint) without changing your active SillyTavern Chat Completion profile. All credit for the original extension goes to Elouann; the original is released into the public domain under The Unlicense.
 
@@ -10,6 +12,12 @@ For provider routing, maintenance guidance, security boundaries, and a verificat
 
 - **Single avatar-reference toggle restored** - The character and persona avatars are once again enabled together with one **Use avatar references** setting. Existing split preferences migrate automatically: either prior setting enabled becomes the combined setting enabled.
 - **Swipe regeneration retained** - The opt-in swipe-right regeneration control remains available.
+
+## Provider adapters and recovery
+
+- **LinkAPI** keeps its existing Gemini-compatible and OpenAI Images model routes behind provider adapters. This does not change your active SillyTavern Chat Completion profile.
+- **TokenReply (Experimental)** provides the text-only `grok-imagine-image` profile. It sends a minimal request until a live compatibility test confirms TokenReply's supported image-size/resolution field and response format.
+- **Manual LinkAPI recovery:** in LinkAPI's **Advanced** settings, **Use legacy LinkAPI routing** lets you deliberately retry using the pre-adapter request path. It is never automatic, so a failed normal request will not make an unrequested second paid generation.
 ## What's New in this Fork (v1.7.0)
 
 - **Lighter gallery** - Gallery images are now stored as files (only paths are
@@ -78,7 +86,7 @@ For provider routing, maintenance guidance, security boundaries, and a verificat
 > ⚠️ **Important:** A Paid Tier of AiStudio or OpenRouter credits is needed to generate pictures. Free version will not work.
 
 - SillyTavern (latest staging branch)
-- Google AI Studio API key OR OpenRouter API key configured in SillyTavern, OR a LinkAPI key entered in this extension's settings
+- Google AI Studio API key OR OpenRouter API key configured in SillyTavern, OR a LinkAPI/TokenReply key entered in this extension's settings
 - A Gemini model with image generation capability:
   - `Nano Banana 🍌` (Flash) - Faster, cheaper (~$0.04/image)
   - `Nano Banana 2 🍌` (Flash) - Gemini 3.1 Flash
@@ -115,8 +123,9 @@ Aliases: `/proimg`, `/geminiimg`
 
 | Setting | Description |
 |---------|-------------|
-| Provider | Google AI Studio, LinkAPI, or OpenRouter |
-| LinkAPI Key | Required when Provider is LinkAPI; used only for image generation |
+| Provider | Google AI Studio, LinkAPI, TokenReply (Experimental), or OpenRouter |
+| Provider API Key | Required for LinkAPI or TokenReply; used only for image generation and stored separately per provider |
+| LinkAPI recovery | Advanced, manual-only legacy-routing switch; never an automatic fallback |
 | Model | Flash (~$0.04), Flash 2 (Gemini 3.1), or Pro (~$0.14) |
 | Aspect Ratio | 1:1, 3:4, 4:3, 9:16, or 16:9 |
 | Image Size | Pro: Default, 1K, 2K, 4K <br> Flash 2: Default, 512px, 1K, 2K, 4K |

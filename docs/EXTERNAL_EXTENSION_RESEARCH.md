@@ -15,12 +15,25 @@ It records observable repository behavior and documentation. It does not claim t
 
 ## Current extension baseline
 
-This extension is intentionally small: a browser-side SillyTavern extension with one implementation file, one settings template, one stylesheet, and a focused Node regression test. LinkAPI currently has two distinct transports:
+This extension remains intentionally small: a browser-side SillyTavern extension with a thin integration file, one settings template, one stylesheet, focused Node contract tests, and small provider modules. LinkAPI has two distinct transports:
 
 1. Gemini-compatible routing through SillyTavern's chat-completions backend with a request-scoped proxy override.
 2. A direct browser OpenAI Images API request for `gpt-image*` and `dall-e*` models.
 
-That split is the architectural pressure behind this research. A new provider must not lead to copied UI, credential, model-list, and generation branches throughout `index.js`.
+That split led to the current curated registry and pure adapter helpers. A new provider must not lead to copied UI, credential, model-list, and generation branches throughout `index.js`.
+
+## Implementation status after this research
+
+The extension now has a deliberately limited first adapter slice:
+
+- `lib/providers/registry.js` defines LinkAPI and TokenReply provider/model contracts and resolves `sillyTavernGeminiProxy` or `openAiImages` transport.
+- `lib/providers/gemini-proxy.js` preserves LinkAPI's request-scoped SillyTavern Gemini proxy shape.
+- `lib/providers/openai-images.js` constructs minimal OpenAI Images payloads and normalizes base64 or URL responses.
+- `provider_keys` separates provider credentials while mirroring the legacy LinkAPI key for rollback compatibility.
+- LinkAPI has a manual-only advanced legacy route for recovery; it is never an automatic retry.
+- TokenReply `grok-imagine-image` is implemented only as an Experimental, text-only profile. No live provider generation was recorded in this work.
+
+The authoritative release status and evidence rules live in [PROVIDER_CATALOG.md](PROVIDER_CATALOG.md).
 
 ## Pawtrait: useful ideas and limits
 
