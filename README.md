@@ -90,8 +90,8 @@ Direct LinkAPI Images and TokenReply requests run in the browser. Use browser De
 - SillyTavern (latest staging branch).
 - **Google AI Studio or OpenRouter:** configure the selected provider and its image-capable model in SillyTavern Chat Completion settings. Google AI Studio and OpenRouter use SillyTavern Chat Completion settings; this extension does not ask for a separate key for either route.
 - **LinkAPI Gemini models:** select LinkAPI in this extension and enter a LinkAPI key under Provider API Key. LinkAPI Gemini models use the SillyTavern route with a request-scoped LinkAPI proxy, without changing the active Chat Completion profile.
-- **LinkAPI `gpt-image*`/`dall-e*` models:** select LinkAPI and enter the same LinkAPI key. LinkAPI `gpt-image*`/`dall-e*` models use LinkAPI's direct Images route; they are text-only, and **Fetch models** is available only for LinkAPI.
-- **TokenReply `grok-imagine-image` (Experimental):** select TokenReply and enter a TokenReply key under Provider API Key. TokenReply is Experimental and text-only; it has two built-in models (`grok-imagine-image` and `grok-imagine-image-quality`), no Fetch models control, no reference-image controls, and no image-size control until a live test verifies its contract.
+- **LinkAPI `gpt-image*`/`dall-e*` models:** select LinkAPI and enter the same LinkAPI key. LinkAPI `gpt-image*`/`dall-e*` models use LinkAPI's direct Images route; they are text-only, and **Manage models → Fetch models** can discover matching image IDs.
+- **TokenReply `grok-imagine-image` (Experimental):** select TokenReply and enter a TokenReply key under Provider API Key. TokenReply is Experimental and text-only; it has two built-in models (`grok-imagine-image` and `grok-imagine-image-quality`), experimental **Manage models → Fetch models** support, no reference-image controls, and no image-size control until a live test verifies its contract.
 
 ## Installation
 
@@ -110,9 +110,10 @@ Direct LinkAPI Images and TokenReply requests run in the browser. Use browser De
 ### Settings Panel
 
 - Select Google AI Studio or OpenRouter to use the active SillyTavern Chat Completion configuration.
-- Select LinkAPI to enter a LinkAPI key, choose Gemini or direct Images models, and optionally fetch additional `gpt-image*`/`dall-e*` models.
+- Select LinkAPI to enter a LinkAPI key, choose Gemini or direct Images models, and manage or fetch additional `gpt-image*`/`dall-e*` models.
 - Select TokenReply (Experimental) to enter its separate key and choose `grok-imagine-image` or `grok-imagine-image-quality`; it is text-only and hides image-size and reference-image controls.
 - Choose aspect ratio and compatible controls for the selected model, toggle descriptions, customize the system instruction, and manage the gallery.
+- Use **Manage models** to add or edit the actual model ID sent to the selected provider. **Fetch models** merges discovered IDs without deleting your local entries. TokenReply discovery is Experimental and may fail safely until its /v1/models behavior is live-verified.
 
 ### Slash Command
 ```
@@ -127,7 +128,7 @@ Aliases: `/proimg`, `/geminiimg`
 | Provider | Google AI Studio/OpenRouter use SillyTavern Chat Completion settings; LinkAPI and TokenReply use a key entered in this extension. |
 | Provider API Key | Shown for LinkAPI and TokenReply only; each provider retains its own credential association. |
 | Model | Gemini controls apply to Gemini models. LinkAPI also offers direct, text-only `gpt-image*`/`dall-e*` models. TokenReply offers experimental `grok-imagine-image` and `grok-imagine-image-quality`. |
-| Fetch models | LinkAPI only; discovers matching `gpt-image*`/`dall-e*` IDs for the current session. TokenReply has no model discovery. |
+| Fetch models | LinkAPI only; discovers matching `gpt-image*`/`dall-e*` IDs for the current session. TokenReply offers an Experimental standard `/v1/models` attempt; failed fetches leave local IDs unchanged. |
 | Aspect ratio / image size | Gemini-compatible controls retain their model-specific behavior. TokenReply hides image size until live verification confirms its accepted field. |
 | Avatar / previous-image references | Available only to models whose provider metadata supports reference images; hidden for TokenReply and direct LinkAPI Images models. |
 | LinkAPI recovery | Advanced, manual-only legacy-routing switch; never an automatic fallback. |

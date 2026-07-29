@@ -27,7 +27,7 @@ import { SlashCommand } from '../../../slash-commands/SlashCommand.js';
 import { ARGUMENT_TYPE, SlashCommandArgument } from '../../../slash-commands/SlashCommandArgument.js';
 import { getModelDefinition, resolveProviderRoute, getProviderDefinitions, requiresAdapterRoute } from './lib/providers/registry.js';
 import { getModelFallback, projectProviderControls, projectProviderOptions, projectProviderUi } from './lib/providers/ui-projection.js';
-import { mergeFetchedModelEntries } from './lib/providers/model-manager.js';
+import { mergeFetchedModelEntries, updateLocalModelEntries } from './lib/providers/model-manager.js';
 import { fetchProviderModels } from './lib/providers/model-discovery.js';
 import { buildOpenAiImagesRequest, parseOpenAiImagesResponse } from './lib/providers/openai-images.js';
 import { dispatchProviderRoute } from './lib/providers/dispatch.js';
@@ -227,6 +227,7 @@ async function fetchManagedProviderModels() {
         const fetched = await fetchProviderModels({ providerId, apiKey: key });
         setProviderModelEntries(settings, providerId, mergeFetchedModelEntries(getProviderModelEntries(settings, providerId), fetched.map((entry) => entry.id)));
         updateModelDropdown();
+        renderModelManager();
         saveSettingsDebounced();
         toastr.success(`Loaded ${fetched.length} model(s).`, 'Context Image Generation');
     } catch (error) {
@@ -320,6 +321,7 @@ function updateModelDropdown() {
 
     toggleImageSizeVisibility();
     toggleProviderSpecificSettings();
+    renderModelManager();
     renderGallery();
 }
 
@@ -335,6 +337,65 @@ function toggleProviderSpecificSettings() {
     $('#cig_provider_info').text(ui.providerInfo || '').toggle(Boolean(ui.providerInfo));
 }
 
+function renderModelManager() {
+    const settings = extension_settings[extensionName];
+    const providerId = settings.provider || 'makersuite';
+    const localEntries = getProviderModelEntries(settings, providerId);
+    const ui = projectProviderUi(providerId, settings.model, { localEntries });
+    if (!ui) return;
+
+    const $list = $('#cig_managed_model_list').empty();
+    for (const model of ui.models) {
+        const isLocal = localEntries.some((entry) => entry.id === model.id);
+        $list.append($('<option>').val(model.id).text(`${model.label}${isLocal ? ' (local)' : ' (built-in)'}`));
+    }
+    $list.val(settings.model);
+    $('#cig_managed_model_id').val(settings.model || '');
+    $('#cig_fetch_provider_models').toggle(ui.supportsModelDiscovery);
+    $('#cig_model_discovery_note')
+        .text(ui.modelDiscoveryExperimental ? 'Experimental: model discovery uses the provider’s standard /models endpoint. A failed fetch keeps your current list.' : '')
+        .toggle(ui.modelDiscoveryExperimental);
+    $('#cig_remove_model').prop('disabled', !localEntries.some((entry) => entry.id === settings.model));
+}
+
+function refreshManagedModels() {
+    updateModelDropdown();
+    toggleImageSizeVisibility();
+    toggleProviderSpecificSettings();
+    renderModelManager();
+}
+
+function saveManagedModel(operation) {
+    const settings = extension_settings[extensionName];
+    const providerId = settings.provider || 'makersuite';
+    const id = $('#cig_managed_model_id').val().trim();
+    if (!id) {
+        toastr.warning('Enter an actual model ID.', 'Context Image Generation');
+        return;
+    }
+    const previousId = $('#cig_managed_model_list').val();
+    const localEntries = getProviderModelEntries(settings, providerId);
+    const type = operation === 'save' && localEntries.some((entry) => entry.id === previousId) ? 'replace' : 'upsert';
+    setProviderModelEntries(settings, providerId, updateLocalModelEntries(localEntries, { type, previousId, id, source: 'manual' }));
+    settings.model = id;
+    refreshManagedModels();
+    saveSettingsDebounced();
+}
+
+function removeManagedModel() {
+    const settings = extension_settings[extensionName];
+    const providerId = settings.provider || 'makersuite';
+    const selectedId = $('#cig_managed_model_list').val();
+    const localEntries = getProviderModelEntries(settings, providerId);
+    if (!localEntries.some((entry) => entry.id === selectedId)) {
+        toastr.info('Built-in models stay available. Select a different ID or remove a local model.', 'Context Image Generation');
+        return;
+    }
+    setProviderModelEntries(settings, providerId, updateLocalModelEntries(localEntries, { type: 'remove', id: selectedId }));
+    settings.model = getModelFallback(providerId, settings.model, getProviderModelEntries(settings, providerId));
+    refreshManagedModels();
+    saveSettingsDebounced();
+}
 function toggleImageSizeVisibility() {
     const settings = extension_settings[extensionName];
     const providerId = settings.provider || 'makersuite';
@@ -1066,6 +1127,7 @@ jQuery(async () => {
         updateModelDropdown();
         toggleImageSizeVisibility();
         toggleProviderSpecificSettings();
+        renderModelManager();
         saveSettingsDebounced();
     });
 
@@ -1083,11 +1145,22 @@ jQuery(async () => {
         saveSettingsDebounced();
     });
 
-    $('#cig_fetch_linkapi_models').on('click', fetchLinkApiModels);
+    $('#cig_fetch_provider_models').on('click', fetchManagedProviderModels);
+    $('#cig_managed_model_list').on('change', function () {
+        const selectedId = $(this).val() || '';
+        $('#cig_managed_model_id').val(selectedId);
+        const settings = extension_settings[extensionName];
+        const providerId = settings.provider || 'makersuite';
+        $('#cig_remove_model').prop('disabled', !getProviderModelEntries(settings, providerId).some((entry) => entry.id === selectedId));
+    });
+    $('#cig_add_model').on('click', () => saveManagedModel('add'));
+    $('#cig_save_model').on('click', () => saveManagedModel('save'));
+    $('#cig_remove_model').on('click', removeManagedModel);
 
     $('#cig_model').on('change', function () {
         extension_settings[extensionName].model = $(this).val();
         toggleImageSizeVisibility();
+        renderModelManager();
         saveSettingsDebounced();
     });
 
