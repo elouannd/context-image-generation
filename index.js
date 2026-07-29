@@ -25,41 +25,29 @@ import { MEDIA_DISPLAY, MEDIA_SOURCE, MEDIA_TYPE, SCROLL_BEHAVIOR, SWIPE_DIRECTI
 import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
 import { SlashCommand } from '../../../slash-commands/SlashCommand.js';
 import { ARGUMENT_TYPE, SlashCommandArgument } from '../../../slash-commands/SlashCommandArgument.js';
+import { getModelDefinition, resolveProviderRoute, getProviderDefinitions, requiresAdapterRoute } from './lib/providers/registry.js';
+import { getModelFallback, projectProviderControls, projectProviderOptions, projectProviderUi } from './lib/providers/ui-projection.js';
+import { mergeFetchedModelEntries, updateLocalModelEntries } from './lib/providers/model-manager.js';
+import { fetchProviderModels } from './lib/providers/model-discovery.js';
+import { buildOpenAiImagesRequest, parseOpenAiImagesResponse } from './lib/providers/openai-images.js';
+import { dispatchProviderRoute } from './lib/providers/dispatch.js';
 
 const extensionName = 'context-image-generation';
 const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
-
-// Provider-specific model configurations
-const PROVIDER_MODELS = {
-    makersuite: {
-        flash: { id: 'gemini-2.5-flash-image', name: 'Nano Banana 🍌 (~$0.04/img)' },
-        flash2: { id: 'gemini-3.1-flash-image-preview', name: 'Nano Banana 2 🍌 (Flash)' },
-        pro: { id: 'gemini-3-pro-image-preview', name: 'Nano Banana Pro 🍌 (~$0.14/img)' },
-    },
-    linkapi: {
-        flash: { id: 'gemini-2.5-flash-image', name: 'Nano Banana 🍌 (LinkAPI)' },
-        flash2: { id: 'gemini-3.1-flash-image-preview', name: 'Nano Banana 2 🍌 (LinkAPI)' },
-        pro: { id: 'gemini-3-pro-image-preview', name: 'Nano Banana Pro 🍌 (LinkAPI)' },
-        gptimage: { id: 'gpt-image-2-c', name: 'ChatGPT Image 🖼️ (gpt-image-2-c)' },
-    },
-    openrouter: {
-        flash: { id: 'google/gemini-2.5-flash-image-preview', name: 'Nano Banana 🍌 (OpenRouter)' },
-        flash2: { id: 'google/gemini-3.1-flash-image-preview', name: 'Nano Banana 2 🍌 (OpenRouter)' },
-        pro: { id: 'google/gemini-3-pro-image-preview', name: 'Nano Banana Pro 🍌 (OpenRouter)' },
-    },
-};
 
 const defaultSettings = {
     provider: 'makersuite',
     model: 'gemini-2.5-flash-image',
     linkapi_key: '',
+    provider_keys: {},
+    provider_models: {},
+    linkapi_use_legacy_routing: false,
     aspect_ratio: '1:1',
     image_size: '',
     thinking_level: 'auto',
     use_google_search: false,
     auto_generate: 'off',
-    use_char_avatar: false,
-    use_user_avatar: false,
+    use_avatars: false,
     regenerate_on_swipe: false,
     include_descriptions: false,
     use_previous_image: false,
@@ -70,8 +58,29 @@ const defaultSettings = {
 
 const MAX_GALLERY_SIZE = 50;
 
-// Runtime-only list of image models fetched from LinkAPI /v1/models (not persisted).
-let fetchedLinkApiModels = [];
+function getProviderApiKey(settings, providerId) {
+    const providerKeys = settings.provider_keys;
+    if (providerKeys && typeof providerKeys === 'object' && typeof providerKeys[providerId] === 'string') return providerKeys[providerId];
+    return providerId === 'linkapi' ? settings.linkapi_key || '' : '';
+}
+
+function setProviderApiKey(settings, providerId, value) {
+    if (!settings.provider_keys || typeof settings.provider_keys !== 'object' || Array.isArray(settings.provider_keys)) settings.provider_keys = {};
+    settings.provider_keys[providerId] = value;
+    if (providerId === 'linkapi') { settings.linkapi_key = value; settings.provider_keys.linkapi = value; }
+}
+
+function getProviderModelEntries(settings, providerId) {
+    const entries = settings.provider_models?.[providerId];
+    return Array.isArray(entries) ? entries : [];
+}
+
+function setProviderModelEntries(settings, providerId, entries) {
+    if (!settings.provider_models || typeof settings.provider_models !== 'object' || Array.isArray(settings.provider_models)) {
+        settings.provider_models = {};
+    }
+    settings.provider_models[providerId] = entries;
+}
 
 // --- LinkAPI ChatGPT (gpt-image) helpers (pure, text-prompt only) ---
 
@@ -165,31 +174,67 @@ async function requestLinkApiImage({ apiKey, model, prompt, size, host = 'https:
     throw new Error('No image was returned by the API');
 }
 
-async function fetchLinkApiModels() {
+async function requestOpenAiImages({ apiKey, model, prompt, size, baseUrl }) {
+    const response = await fetch(`${baseUrl}/images/generations`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey || ''}`,
+        },
+        body: JSON.stringify(buildOpenAiImagesRequest({
+            model,
+            prompt,
+            size,
+            responseFormat: 'b64_json',
+        })),
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[${extensionName}] OpenAI Images error (${response.status}):`, errorText);
+        let message = `API Error: ${response.status}`;
+        try {
+            const json = JSON.parse(errorText);
+            message = json.error?.message || json.message || message;
+        } catch (e) { /* keep default */ }
+        throw new Error(message);
+    }
+
+    const { b64, url: imageUrl } = parseOpenAiImagesResponse(await response.json());
+    if (b64) {
+        return { imageData: b64, mimeType: 'image/png' };
+    }
+
+    const imageResponse = await fetch(imageUrl);
+    if (!imageResponse.ok) {
+        throw new Error(`Failed to download generated image: HTTP ${imageResponse.status}`);
+    }
+    return { imageData: arrayBufferToBase64(await imageResponse.arrayBuffer()), mimeType: 'image/png' };
+}
+async function fetchManagedProviderModels() {
     const settings = extension_settings[extensionName];
-    const key = settings.linkapi_key;
-    if (!key) {
-        toastr.warning('Enter a LinkAPI key first.', 'Context Image Generation');
+    const providerId = settings.provider || 'makersuite';
+    const ui = projectProviderUi(providerId, settings.model, { localEntries: getProviderModelEntries(settings, providerId) });
+    if (!ui?.supportsModelDiscovery) return;
+
+    const key = getProviderApiKey(settings, providerId);
+    if (ui.requiresApiKey && !key) {
+        toastr.warning(`Enter a ${ui.label} key first.`, 'Context Image Generation');
         return;
     }
+
     try {
-        const resp = await fetch('https://linkapi.ai/v1/models', {
-            headers: { 'Authorization': `Bearer ${key}` },
-        });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const json = await resp.json();
-        const ids = (json.data || [])
-            .map(m => m.id)
-            .filter(id => /^(gpt-image|dall-e)/i.test(id));
-        fetchedLinkApiModels = ids.map(id => ({ id, name: id }));
+        const fetched = await fetchProviderModels({ providerId, apiKey: key });
+        setProviderModelEntries(settings, providerId, mergeFetchedModelEntries(getProviderModelEntries(settings, providerId), fetched.map((entry) => entry.id)));
         updateModelDropdown();
-        toastr.success(`Loaded ${ids.length} image model(s).`, 'Context Image Generation');
-    } catch (e) {
-        console.error(`[${extensionName}] Fetch models failed:`, e);
-        toastr.error(`Failed to fetch models: ${e.message}`, 'Context Image Generation');
+        renderModelManager();
+        saveSettingsDebounced();
+        toastr.success(`Loaded ${fetched.length} model(s).`, 'Context Image Generation');
+    } catch (error) {
+        console.error(`[${extensionName}] Fetch models failed:`, error);
+        toastr.error(`Failed to fetch models: ${error.message}`, 'Context Image Generation');
     }
 }
-
 // Dev aid: reach the pure helpers from the DevTools console for verification.
 window.cigDebug = Object.assign(window.cigDebug || {}, {
     isOpenAiImageModel,
@@ -199,94 +244,74 @@ window.cigDebug = Object.assign(window.cigDebug || {}, {
     requestLinkApiImage,
 });
 
-function updateModelDropdown() {
-    const settings = extension_settings[extensionName];
-    const provider = settings.provider || 'makersuite';
-    const models = PROVIDER_MODELS[provider] || PROVIDER_MODELS.makersuite;
-
-    const $modelSelect = $('#cig_model');
-    $modelSelect.empty();
-
-    // Build options via DOM construction (not string interpolation) so ids/names
-    // from the LinkAPI /v1/models response cannot break the markup. `seen`
-    // dedupes without an attribute selector (which a quote in an id would break).
-    const seen = new Set();
-    const addOption = (id, name) => {
-        if (seen.has(id)) return;
-        seen.add(id);
-        $modelSelect.append($('<option>').val(id).text(name));
-    };
-
-    for (const m of Object.values(models)) {
-        addOption(m.id, m.name);
-    }
-
-    // Merge dynamically fetched LinkAPI image models (runtime only).
-    if (provider === 'linkapi' && Array.isArray(fetchedLinkApiModels)) {
-        for (const m of fetchedLinkApiModels) {
-            addOption(m.id, m.name);
-        }
-    }
-
-    // Preserve a previously selected gpt-image/dall-e model across reloads:
-    // fetchedLinkApiModels is runtime-only and empty after a reload, so without
-    // this a fetched model would silently fall back to a Gemini model below.
-    if (provider === 'linkapi' && isOpenAiImageModel(settings.model)) {
-        addOption(settings.model, settings.model);
-    }
-
-    // Keep the exact current model if it is still available; otherwise fall back
-    // to the closest type match (preserves cross-provider switching behaviour).
-    const optionValues = Array.from(seen);
-    const currentModel = settings.model || '';
-    if (optionValues.includes(currentModel)) {
-        $modelSelect.val(currentModel);
-    } else if (currentModel.includes('pro') || currentModel.includes('3-pro')) {
-        $modelSelect.val(models.pro.id);
-        settings.model = models.pro.id;
-    } else if (currentModel.includes('3.1') || currentModel.includes('3-1')) {
-        $modelSelect.val(models.flash2.id);
-        settings.model = models.flash2.id;
-    } else {
-        $modelSelect.val(models.flash.id);
-        settings.model = models.flash.id;
-    }
-
-    if (typeof toggleImageSizeVisibility === 'function') {
-        toggleImageSizeVisibility();
+function renderProviderDropdown() {
+    const $providerSelect = $('#cig_provider').empty();
+    for (const provider of projectProviderOptions()) {
+        $providerSelect.append($('<option>').val(provider.id).text(provider.label || provider.id));
     }
 }
 
-async function loadSettings() {
+function updateModelDropdown() {
+    const settings = extension_settings[extensionName];
+    const providerId = settings.provider || 'makersuite';
+    const localEntries = getProviderModelEntries(settings, providerId);
+    const ui = projectProviderUi(providerId, settings.model, { localEntries });
+    if (!ui) return;
+    const $modelSelect = $('#cig_model').empty();
+    for (const model of ui.models) {
+        $modelSelect.append($('<option>').val(model.id).text(model.label));
+    }
+    settings.model = getModelFallback(providerId, settings.model, localEntries);
+    $modelSelect.val(settings.model);
+    toggleImageSizeVisibility();
+}async function loadSettings() {
     extension_settings[extensionName] = extension_settings[extensionName] || {};
+    let settingsMigrated = false;
 
     for (const [key, value] of Object.entries(defaultSettings)) {
         if (extension_settings[extensionName][key] === undefined) {
             extension_settings[extensionName][key] = value;
+            settingsMigrated = true;
         }
     }
 
-    // Migrate the legacy single "use_avatars" toggle to the two independent toggles.
-    // Runs once: after migrating, the old key is deleted so it can't override later choices.
+    // Restore the single avatar-reference preference. Existing split settings
+    // migrate once: either previously enabled avatar keeps references enabled.
     const cigSettings = extension_settings[extensionName];
-    if (cigSettings.use_avatars !== undefined) {
-        if (cigSettings.use_avatars === true) {
-            cigSettings.use_char_avatar = true;
-            cigSettings.use_user_avatar = true;
-        }
-        delete cigSettings.use_avatars;
+    if (!cigSettings.provider_keys || typeof cigSettings.provider_keys !== 'object' || Array.isArray(cigSettings.provider_keys)) {
+        cigSettings.provider_keys = {};
+        settingsMigrated = true;
     }
+    if (!cigSettings.provider_models || typeof cigSettings.provider_models !== 'object' || Array.isArray(cigSettings.provider_models)) {
+        cigSettings.provider_models = {};
+        settingsMigrated = true;
+    }
+    if (!Object.hasOwn(cigSettings.provider_keys, 'linkapi') && cigSettings.linkapi_key) {
+        cigSettings.provider_keys.linkapi = cigSettings.linkapi_key;
+        settingsMigrated = true;
+    }
+    if (cigSettings.use_char_avatar !== undefined || cigSettings.use_user_avatar !== undefined) {
+        cigSettings.use_avatars = Boolean(cigSettings.use_char_avatar || cigSettings.use_user_avatar);
+        delete cigSettings.use_char_avatar;
+        delete cigSettings.use_user_avatar;
+        settingsMigrated = true;
+    }
+
+    if (settingsMigrated) {
+        saveSettingsDebounced();
+    }
+
 
     $('#cig_provider').val(extension_settings[extensionName].provider);
     updateModelDropdown();
     $('#cig_model').val(extension_settings[extensionName].model);
-    $('#cig_linkapi_key').val(extension_settings[extensionName].linkapi_key);
+    $('#cig_provider_api_key').val(getProviderApiKey(cigSettings, cigSettings.provider || 'makersuite'));
+    $('#cig_linkapi_use_legacy_routing').prop('checked', cigSettings.linkapi_use_legacy_routing);
     $('#cig_aspect_ratio').val(extension_settings[extensionName].aspect_ratio);
     $('#cig_image_size').val(extension_settings[extensionName].image_size);
     $('#cig_thinking_level').val(extension_settings[extensionName].thinking_level);
     $('#cig_use_google_search').prop('checked', extension_settings[extensionName].use_google_search);
-    $('#cig_use_char_avatar').prop('checked', extension_settings[extensionName].use_char_avatar);
-    $('#cig_use_user_avatar').prop('checked', extension_settings[extensionName].use_user_avatar);
+    $('#cig_use_avatars').prop('checked', extension_settings[extensionName].use_avatars);
     $('#cig_include_descriptions').prop('checked', extension_settings[extensionName].include_descriptions);
     $('#cig_use_previous_image').prop('checked', extension_settings[extensionName].use_previous_image);
     $('#cig_regenerate_on_swipe').prop('checked', extension_settings[extensionName].regenerate_on_swipe);
@@ -296,55 +321,102 @@ async function loadSettings() {
 
     toggleImageSizeVisibility();
     toggleProviderSpecificSettings();
+    renderModelManager();
     renderGallery();
 }
 
 function toggleProviderSpecificSettings() {
-    const provider = extension_settings[extensionName].provider || 'makersuite';
-    $('#cig_linkapi_container').toggle(provider === 'linkapi');
+    const settings = extension_settings[extensionName];
+    const providerId = settings.provider || 'makersuite';
+    const ui = projectProviderUi(providerId, settings.model, { localEntries: getProviderModelEntries(settings, providerId) });
+    if (!ui) return;
+    $('#cig_provider_key_container').toggle(ui.requiresApiKey);
+    $('#cig_linkapi_container').toggle(ui.supportsModelDiscovery || ui.showsLegacyRecovery);
+    $('#cig_provider_api_key_label').text(ui.apiKeyLabel);
+    $('#cig_provider_api_key').val(getProviderApiKey(settings, settings.provider));
+    $('#cig_provider_info').text(ui.providerInfo || '').toggle(Boolean(ui.providerInfo));
 }
 
-function toggleImageSizeVisibility() {
-    const model = extension_settings[extensionName].model;
-    const isProModel = /gemini-3-pro/.test(model);
-    const isFlash2Model = /gemini-3\.1/.test(model);
-    const isSizeSupported = isProModel || isFlash2Model;
-    $('#cig_image_size_container').toggle(isSizeSupported);
-    $('#cig_flash2_options').toggle(isFlash2Model);
-    $('#cig_chatgpt_note').toggle(isOpenAiImageModel(model));
+function renderModelManager() {
+    const settings = extension_settings[extensionName];
+    const providerId = settings.provider || 'makersuite';
+    const localEntries = getProviderModelEntries(settings, providerId);
+    const ui = projectProviderUi(providerId, settings.model, { localEntries });
+    if (!ui) return;
 
-    if (isSizeSupported) {
-        updateSizeDropdown(model, isFlash2Model);
+    const $list = $('#cig_managed_model_list').empty();
+    for (const model of ui.models) {
+        const isLocal = localEntries.some((entry) => entry.id === model.id);
+        $list.append($('<option>').val(model.id).text(`${model.label}${isLocal ? ' (local)' : ' (built-in)'}`));
     }
+    $list.val(settings.model);
+    $('#cig_managed_model_id').val(settings.model || '');
+    $('#cig_fetch_provider_models').toggle(ui.supportsModelDiscovery);
+    $('#cig_model_discovery_note')
+        .text(ui.modelDiscoveryExperimental ? 'Experimental: model discovery uses the provider’s standard /models endpoint. A failed fetch keeps your current list.' : '')
+        .toggle(ui.modelDiscoveryExperimental);
+    $('#cig_remove_model').prop('disabled', !localEntries.some((entry) => entry.id === settings.model));
 }
 
-function updateSizeDropdown(model, isFlash2Model) {
+function refreshManagedModels() {
+    updateModelDropdown();
+    toggleImageSizeVisibility();
+    toggleProviderSpecificSettings();
+    renderModelManager();
+}
+
+function saveManagedModel(operation) {
+    const settings = extension_settings[extensionName];
+    const providerId = settings.provider || 'makersuite';
+    const id = $('#cig_managed_model_id').val().trim();
+    if (!id) {
+        toastr.warning('Enter an actual model ID.', 'Context Image Generation');
+        return;
+    }
+    const previousId = $('#cig_managed_model_list').val();
+    const localEntries = getProviderModelEntries(settings, providerId);
+    const type = operation === 'save' && localEntries.some((entry) => entry.id === previousId) ? 'replace' : 'upsert';
+    setProviderModelEntries(settings, providerId, updateLocalModelEntries(localEntries, { type, previousId, id, source: 'manual' }));
+    settings.model = id;
+    refreshManagedModels();
+    saveSettingsDebounced();
+}
+
+function removeManagedModel() {
+    const settings = extension_settings[extensionName];
+    const providerId = settings.provider || 'makersuite';
+    const selectedId = $('#cig_managed_model_list').val();
+    const localEntries = getProviderModelEntries(settings, providerId);
+    if (!localEntries.some((entry) => entry.id === selectedId)) {
+        toastr.info('Built-in models stay available. Select a different ID or remove a local model.', 'Context Image Generation');
+        return;
+    }
+    setProviderModelEntries(settings, providerId, updateLocalModelEntries(localEntries, { type: 'remove', id: selectedId }));
+    settings.model = getModelFallback(providerId, settings.model, getProviderModelEntries(settings, providerId));
+    refreshManagedModels();
+    saveSettingsDebounced();
+}
+function toggleImageSizeVisibility() {
+    const settings = extension_settings[extensionName];
+    const providerId = settings.provider || 'makersuite';
+    const ui = projectProviderControls(providerId, settings.model, settings.image_size, { localEntries: getProviderModelEntries(settings, providerId) });
+    if (!ui) return;
+    if (settings.image_size !== ui.imageSize) settings.image_size = ui.imageSize;
+    const hasImageSizes = ui.imageSizeOptions.length > 0;
+    $('#cig_image_size_container').toggle(hasImageSizes);
+    $('#cig_flash2_options').toggle(ui.supportsThinking || ui.supportsGoogleSearch);
+    $('#cig_model_note').text(ui.modelNote || '').toggle(Boolean(ui.modelNote));
+    $('#cig_avatar_reference_option').toggle(ui.supportsReferenceImages);
+    $('#cig_previous_image_reference_option').toggle(ui.supportsReferenceImages);
+    if (hasImageSizes) updateSizeDropdown(ui.imageSizeOptions);
+}
+
+function updateSizeDropdown(imageSizeOptions) {
     const $sizeSelect = $('#cig_image_size');
     const currentValue = extension_settings[extensionName].image_size || '';
-
-    $sizeSelect.empty();
-    $sizeSelect.append('<option value="">Default</option>');
-
-    if (isFlash2Model) {
-        $('#cig_image_size_label').text('Image Size (Flash 2)');
-        $sizeSelect.append('<option value="512">512px</option>');
-        $sizeSelect.append('<option value="1K">1K</option>');
-        $sizeSelect.append('<option value="2K">2K</option>');
-        $sizeSelect.append('<option value="4K">4K</option>');
-    } else {
-        $('#cig_image_size_label').text('Image Size (Pro only)');
-        $sizeSelect.append('<option value="1K">1K</option>');
-        $sizeSelect.append('<option value="2K">2K</option>');
-        $sizeSelect.append('<option value="4K">4K</option>');
-    }
-
-    // Select previous if exists, otherwise Default
-    if ($sizeSelect.find(`option[value="${currentValue}"]`).length > 0) {
-        $sizeSelect.val(currentValue);
-    } else {
-        $sizeSelect.val('');
-        extension_settings[extensionName].image_size = '';
-    }
+    $sizeSelect.empty().append('<option value="">Default</option>');
+    for (const option of imageSizeOptions) $sizeSelect.append($('<option>').val(option.value).text(option.label));
+    $sizeSelect.val(currentValue);
 }
 
 async function getUserAvatar() {
@@ -485,7 +557,10 @@ async function buildMessages(prompt, sender = null, messageId = null) {
         contentParts.push({ type: 'text', text: prompt });
     }
 
-    if (settings.use_previous_image && settings.gallery && settings.gallery.length > 0) {
+    const providerId = settings.provider || 'makersuite';
+    const supportsReferenceImages = projectProviderUi(providerId, settings.model, { localEntries: getProviderModelEntries(settings, providerId) })?.supportsReferenceImages !== false;
+
+    if (supportsReferenceImages && settings.use_previous_image && settings.gallery && settings.gallery.length > 0) {
         const dataUrl = await galleryItemToDataUrl(settings.gallery[0]);
         if (dataUrl) {
             console.log(`[${extensionName}] Adding previous generated image as reference`);
@@ -497,7 +572,7 @@ async function buildMessages(prompt, sender = null, messageId = null) {
         }
     }
 
-    if (settings.use_char_avatar) {
+    if (supportsReferenceImages && settings.use_avatars) {
         const charAvatarData = await getCharacterAvatar();
         if (charAvatarData) {
             console.log(`[${extensionName}] Adding character avatar for: ${charAvatarData.name}`);
@@ -509,7 +584,7 @@ async function buildMessages(prompt, sender = null, messageId = null) {
         }
     }
 
-    if (settings.use_user_avatar) {
+    if (supportsReferenceImages && settings.use_avatars) {
         const userAvatarData = await getUserAvatar();
         if (userAvatarData) {
             console.log(`[${extensionName}] Adding user avatar for: ${userAvatarData.name}`);
@@ -525,53 +600,7 @@ async function buildMessages(prompt, sender = null, messageId = null) {
     return messages;
 }
 
-async function generateImageFromPrompt(prompt, sender = null, messageId = null) {
-    const settings = extension_settings[extensionName];
-    const messages = await buildMessages(prompt, sender, messageId);
-
-    const isFlash2 = /gemini-3\.1/.test(settings.model);
-    const selectedProvider = settings.provider || 'makersuite';
-    const isLinkApi = selectedProvider === 'linkapi';
-
-    // ChatGPT (gpt-image) via LinkAPI: direct fetch, text prompt only.
-    if (isLinkApi && isOpenAiImageModel(settings.model)) {
-        console.log(`[${extensionName}] Generating via LinkAPI images endpoint, model:`, settings.model);
-        return await requestLinkApiImage({
-            apiKey: settings.linkapi_key,
-            model: settings.model,
-            prompt: extractPromptText(messages),
-            size: mapAspectRatioToSize(settings.aspect_ratio),
-        });
-    }
-
-    const requestBody = {
-        chat_completion_source: isLinkApi ? 'makersuite' : selectedProvider,
-        model: settings.model,
-        messages: messages,
-        max_tokens: 8192,
-        temperature: 1,
-        request_images: true,
-        request_image_aspect_ratio: settings.aspect_ratio || '1:1',
-        request_image_resolution: settings.image_size || undefined,
-        stream: false,
-        // LinkAPI uses the Gemini-compatible proxy endpoint without changing the active ST chat profile.
-        reverse_proxy: isLinkApi ? 'https://api.linkapi.ai' : oai_settings.reverse_proxy || '',
-        proxy_password: isLinkApi ? settings.linkapi_key || '' : oai_settings.proxy_password || '',
-    };
-
-    // Flash 2 specific options
-    if (isFlash2) {
-        const thinkingLevel = settings.thinking_level || 'auto';
-        if (thinkingLevel !== 'auto') {
-            requestBody.reasoning_effort = thinkingLevel;
-        }
-        if (settings.use_google_search) {
-            requestBody.enable_web_search = true;
-        }
-    }
-
-    console.log(`[${extensionName}] Generating image with provider: ${settings.provider}, model:`, settings.model);
-
+async function requestSillyTavernImage(requestBody) {
     const response = await fetch('/api/backends/chat-completions/generate', {
         method: 'POST',
         headers: getRequestHeaders(),
@@ -610,6 +639,105 @@ async function generateImageFromPrompt(prompt, sender = null, messageId = null) 
     throw new Error('No image was returned by the API');
 }
 
+// Preserves the pre-adapter LinkAPI behavior for the explicit recovery switch.
+async function generateLegacyLinkApiImage(settings, messages) {
+    const isFlash2 = /gemini-3\.1/.test(settings.model);
+
+    if (isOpenAiImageModel(settings.model)) {
+        return await requestLinkApiImage({
+            apiKey: getProviderApiKey(settings, 'linkapi'),
+            model: settings.model,
+            prompt: extractPromptText(messages),
+            size: mapAspectRatioToSize(settings.aspect_ratio),
+        });
+    }
+
+    const requestBody = {
+        chat_completion_source: 'makersuite',
+        model: settings.model,
+        messages,
+        max_tokens: 8192,
+        temperature: 1,
+        request_images: true,
+        request_image_aspect_ratio: settings.aspect_ratio || '1:1',
+        request_image_resolution: settings.image_size || undefined,
+        stream: false,
+        reverse_proxy: 'https://api.linkapi.ai',
+        proxy_password: settings.linkapi_key || '',
+    };
+
+    if (isFlash2) {
+        const thinkingLevel = settings.thinking_level || 'auto';
+        if (thinkingLevel !== 'auto') {
+            requestBody.reasoning_effort = thinkingLevel;
+        }
+        if (settings.use_google_search) {
+            requestBody.enable_web_search = true;
+        }
+    }
+
+    return await requestSillyTavernImage(requestBody);
+}
+
+async function generateImageFromPrompt(prompt, sender = null, messageId = null) {
+    const settings = extension_settings[extensionName];
+    const messages = await buildMessages(prompt, sender, messageId);
+    const selectedProvider = settings.provider || 'makersuite';
+
+    const providerRoute = resolveProviderRoute(selectedProvider, settings.model);
+
+    if (selectedProvider === 'linkapi' && settings.linkapi_use_legacy_routing === true) {
+        return await generateLegacyLinkApiImage(settings, messages);
+    }
+
+    if (providerRoute.provider && providerRoute.transport) {
+        return await dispatchProviderRoute({
+            route: providerRoute,
+            modelId: settings.model,
+            messages,
+            prompt: extractPromptText(messages),
+            apiKey: getProviderApiKey(settings, selectedProvider),
+            aspectRatio: settings.aspect_ratio,
+            imageSize: settings.image_size,
+            isFlash2: /gemini-3\.1/.test(settings.model),
+            thinkingLevel: settings.thinking_level,
+            useGoogleSearch: settings.use_google_search,
+            mapAspectRatioToSize,
+            requestOpenAiImages,
+            requestSillyTavernImage,
+        });
+    }
+    if (requiresAdapterRoute(providerRoute)) {
+        throw new Error(`No ${providerRoute.provider.id} transport is configured for model: ${settings.model}`);
+    }
+    const isFlash2 = /gemini-3\.1/.test(settings.model);
+    const requestBody = {
+        chat_completion_source: selectedProvider,
+        model: settings.model,
+        messages,
+        max_tokens: 8192,
+        temperature: 1,
+        request_images: true,
+        request_image_aspect_ratio: settings.aspect_ratio || '1:1',
+        request_image_resolution: settings.image_size || undefined,
+        stream: false,
+        reverse_proxy: oai_settings.reverse_proxy || '',
+        proxy_password: oai_settings.proxy_password || '',
+    };
+
+    if (isFlash2) {
+        const thinkingLevel = settings.thinking_level || 'auto';
+        if (thinkingLevel !== 'auto') {
+            requestBody.reasoning_effort = thinkingLevel;
+        }
+        if (settings.use_google_search) {
+            requestBody.enable_web_search = true;
+        }
+    }
+
+    console.log(`[${extensionName}] Generating image with provider: ${settings.provider}, model:`, settings.model);
+    return await requestSillyTavernImage(requestBody);
+}
 // Resolve the <img> src for a gallery item. Supports new file-based items ({url})
 // and legacy base64 items ({imageData}) so pre-existing galleries keep working.
 function galleryItemSrc(item) {
@@ -991,6 +1119,7 @@ jQuery(async () => {
         return;
     }
 
+    renderProviderDropdown();
     await loadSettings();
 
     $('#cig_provider').on('change', function () {
@@ -998,19 +1127,40 @@ jQuery(async () => {
         updateModelDropdown();
         toggleImageSizeVisibility();
         toggleProviderSpecificSettings();
+        renderModelManager();
         saveSettingsDebounced();
     });
 
-    $('#cig_linkapi_key').on('input', function () {
-        extension_settings[extensionName].linkapi_key = $(this).val();
+    $('#cig_provider_api_key').on('input', function () {
+        const settings = extension_settings[extensionName];
+        const provider = settings.provider || 'makersuite';
+        if (projectProviderUi(provider, settings.model)?.requiresApiKey) {
+            setProviderApiKey(settings, provider, $(this).val());
+            saveSettingsDebounced();
+        }
+    });
+
+    $('#cig_linkapi_use_legacy_routing').on('change', function () {
+        extension_settings[extensionName].linkapi_use_legacy_routing = $(this).prop('checked');
         saveSettingsDebounced();
     });
 
-    $('#cig_fetch_linkapi_models').on('click', fetchLinkApiModels);
+    $('#cig_fetch_provider_models').on('click', fetchManagedProviderModels);
+    $('#cig_managed_model_list').on('change', function () {
+        const selectedId = $(this).val() || '';
+        $('#cig_managed_model_id').val(selectedId);
+        const settings = extension_settings[extensionName];
+        const providerId = settings.provider || 'makersuite';
+        $('#cig_remove_model').prop('disabled', !getProviderModelEntries(settings, providerId).some((entry) => entry.id === selectedId));
+    });
+    $('#cig_add_model').on('click', () => saveManagedModel('add'));
+    $('#cig_save_model').on('click', () => saveManagedModel('save'));
+    $('#cig_remove_model').on('click', removeManagedModel);
 
     $('#cig_model').on('change', function () {
         extension_settings[extensionName].model = $(this).val();
         toggleImageSizeVisibility();
+        renderModelManager();
         saveSettingsDebounced();
     });
 
@@ -1034,13 +1184,8 @@ jQuery(async () => {
         saveSettingsDebounced();
     });
 
-    $('#cig_use_char_avatar').on('change', function () {
-        extension_settings[extensionName].use_char_avatar = $(this).prop('checked');
-        saveSettingsDebounced();
-    });
-
-    $('#cig_use_user_avatar').on('change', function () {
-        extension_settings[extensionName].use_user_avatar = $(this).prop('checked');
+    $('#cig_use_avatars').on('change', function () {
+        extension_settings[extensionName].use_avatars = $(this).prop('checked');
         saveSettingsDebounced();
     });
 
