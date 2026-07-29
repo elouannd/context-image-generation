@@ -83,22 +83,19 @@ Provider availability and evidence status are tracked in [docs/PROVIDER_CATALOG.
 
 ## Requirements
 
-> ⚠️ **Important:** A Paid Tier of AiStudio or OpenRouter credits is needed to generate pictures. Free version will not work.
-
-- SillyTavern (latest staging branch)
-- Google AI Studio API key OR OpenRouter API key configured in SillyTavern, OR a LinkAPI/TokenReply key entered in this extension's settings
-- A Gemini model with image generation capability:
-  - `Nano Banana 🍌` (Flash) - Faster, cheaper (~$0.04/image)
-  - `Nano Banana 2 🍌` (Flash) - Gemini 3.1 Flash
-  - `Nano Banana Pro 🍌` (Pro) - Higher quality, 4K support (~$0.14/image)
+- SillyTavern (latest staging branch).
+- **Google AI Studio or OpenRouter:** configure the selected provider and its image-capable model in SillyTavern Chat Completion settings. Google AI Studio and OpenRouter use SillyTavern Chat Completion settings; this extension does not ask for a separate key for either route.
+- **LinkAPI Gemini models:** select LinkAPI in this extension and enter a LinkAPI key under Provider API Key. LinkAPI Gemini models use the SillyTavern route with a request-scoped LinkAPI proxy, without changing the active Chat Completion profile.
+- **LinkAPI `gpt-image*`/`dall-e*` models:** select LinkAPI and enter the same LinkAPI key. LinkAPI `gpt-image*`/`dall-e*` models use LinkAPI's direct Images route; they are text-only, and **Fetch models** is available only for LinkAPI.
+- **TokenReply `grok-imagine-image` (Experimental):** select TokenReply and enter a TokenReply key under Provider API Key. TokenReply is Experimental and text-only; it has one built-in model, no Fetch models control, no reference-image controls, and no image-size control until a live test verifies its contract.
 
 ## Installation
 
-1. Navigate to your SillyTavern in the Extensions.
-2. Click on Install Extension Button and paste this repo link
-3. Configure your API key in Chat Completion settings
-4. Profit!
-   
+1. In SillyTavern, open **Extensions** and install this repository.
+2. Open Context Image Generation's settings.
+3. Choose one route: configure Google AI Studio/OpenRouter in SillyTavern Chat Completion settings, or choose LinkAPI/TokenReply and enter that provider's key in the extension.
+4. Select a model appropriate to that route, then generate from a message wand or `/proimagine`.
+
 ## Usage
 
 ### Message Button
@@ -107,11 +104,11 @@ Provider availability and evidence status are tracked in [docs/PROVIDER_CATALOG.
 3. Click the wand icon (✨) to generate an image from that message
 
 ### Settings Panel
-- Select your provider (Google AI Studio or OpenRouter)
-- Choose model, aspect ratio, and image size
-- Toggle avatar references and character descriptions
-- Customize the system instruction
-- View and manage gallery
+
+- Select Google AI Studio or OpenRouter to use the active SillyTavern Chat Completion configuration.
+- Select LinkAPI to enter a LinkAPI key, choose Gemini or direct Images models, and optionally fetch additional `gpt-image*`/`dall-e*` models.
+- Select TokenReply (Experimental) to enter its separate key and use only `grok-imagine-image`; it is text-only and hides image-size and reference-image controls.
+- Choose aspect ratio and compatible controls for the selected model, toggle descriptions, customize the system instruction, and manage the gallery.
 
 ### Slash Command
 ```
@@ -121,23 +118,22 @@ Aliases: `/proimg`, `/geminiimg`
 
 ## Configuration
 
-| Setting | Description |
-|---------|-------------|
-| Provider | Google AI Studio, LinkAPI, TokenReply (Experimental), or OpenRouter |
-| Provider API Key | Required for LinkAPI or TokenReply; used only for image generation and stored separately per provider |
-| LinkAPI recovery | Advanced, manual-only legacy-routing switch; never an automatic fallback |
-| Model | Flash (~$0.04), Flash 2 (Gemini 3.1), or Pro (~$0.14) |
-| Aspect Ratio | 1:1, 3:4, 4:3, 9:16, or 16:9 |
-| Image Size | Pro: Default, 1K, 2K, 4K <br> Flash 2: Default, 512px, 1K, 2K, 4K |
-| Thinking Level | Flash 2 only: Auto, Minimal, Low, Medium, High |
-| Google Search | Flash 2 only: Enable web search for references |
-| Auto Generate | Off, Bot messages, or All messages |
-| Message Depth | Number of messages to include as context (1-10) |
-| Use Avatar References | Include both character and persona avatars as visual references |
-| Regenerate on Image Swipe | Opt-in: swipe right past the last generated image to make a new variation |
-| Include Descriptions | Add character descriptions to the prompt |
-| Use Previous Image | Use last generated image as style reference |
-| System Instruction | Customize instructions for the image model |
+| Setting | Route-specific behavior |
+|---------|-------------------------|
+| Provider | Google AI Studio/OpenRouter use SillyTavern Chat Completion settings; LinkAPI and TokenReply use a key entered in this extension. |
+| Provider API Key | Shown for LinkAPI and TokenReply only; each provider retains its own credential association. |
+| Model | Gemini controls apply to Gemini models. LinkAPI also offers direct, text-only `gpt-image*`/`dall-e*` models. TokenReply offers only experimental `grok-imagine-image`. |
+| Fetch models | LinkAPI only; discovers matching `gpt-image*`/`dall-e*` IDs for the current session. TokenReply has no model discovery. |
+| Aspect ratio / image size | Gemini-compatible controls retain their model-specific behavior. TokenReply hides image size until live verification confirms its accepted field. |
+| Avatar / previous-image references | Available on compatible routes; hidden for TokenReply and not sent to direct LinkAPI Images models. |
+| LinkAPI recovery | Advanced, manual-only legacy-routing switch; never an automatic fallback. |
+| Thinking Level | Flash 2 only: Auto, Minimal, Low, Medium, High. |
+| Google Search | Flash 2 only: Enable web search for references. |
+| Auto Generate | Off, Bot messages, or All messages. |
+| Message Depth | Number of messages to include as context (1-10). |
+| Regenerate on Image Swipe | Opt-in: swipe right past the last generated image to make a new variation. |
+| Include Descriptions | Add character descriptions to the prompt. |
+| System Instruction | Customize instructions for the image model. |
 
 ## Troubleshooting
 - Swiping a picture will result in an error.
