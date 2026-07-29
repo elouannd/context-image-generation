@@ -50,6 +50,9 @@ const PROVIDER_MODELS = {
         flash2: { id: 'google/gemini-3.1-flash-image-preview', name: 'Nano Banana 2 🍌 (OpenRouter)' },
         pro: { id: 'google/gemini-3-pro-image-preview', name: 'Nano Banana Pro 🍌 (OpenRouter)' },
     },
+    tokenreply: {
+        grok: { id: 'grok-imagine-image', name: 'Grok Imagine Image (Experimental)' },
+    },
 };
 
 const defaultSettings = {
@@ -292,17 +295,18 @@ function updateModelDropdown() {
     // to the closest type match (preserves cross-provider switching behaviour).
     const optionValues = Array.from(seen);
     const currentModel = settings.model || '';
+    const defaultModel = Object.values(models)[0];
     if (optionValues.includes(currentModel)) {
         $modelSelect.val(currentModel);
-    } else if (currentModel.includes('pro') || currentModel.includes('3-pro')) {
+    } else if ((currentModel.includes('pro') || currentModel.includes('3-pro')) && models.pro) {
         $modelSelect.val(models.pro.id);
         settings.model = models.pro.id;
-    } else if (currentModel.includes('3.1') || currentModel.includes('3-1')) {
+    } else if ((currentModel.includes('3.1') || currentModel.includes('3-1')) && models.flash2) {
         $modelSelect.val(models.flash2.id);
         settings.model = models.flash2.id;
     } else {
-        $modelSelect.val(models.flash.id);
-        settings.model = models.flash.id;
+        $modelSelect.val(defaultModel.id);
+        settings.model = defaultModel.id;
     }
 
     if (typeof toggleImageSizeVisibility === 'function') {
@@ -372,20 +376,26 @@ function toggleProviderSpecificSettings() {
     const supportsProviderKey = provider === 'linkapi' || provider === 'tokenreply';
     $('#cig_provider_key_container').toggle(supportsProviderKey);
     $('#cig_linkapi_container').toggle(provider === 'linkapi');
+    $('#cig_tokenreply_container').toggle(provider === 'tokenreply');
     $('#cig_provider_api_key_label').text(provider === 'linkapi' ? 'LinkAPI API Key' : 'TokenReply API Key');
     $('#cig_provider_api_key').val(getProviderApiKey(settings, provider));
 }
 
 function toggleImageSizeVisibility() {
-    const model = extension_settings[extensionName].model;
+    const settings = extension_settings[extensionName];
+    const provider = settings.provider || 'makersuite';
+    const model = settings.model;
     const isProModel = /gemini-3-pro/.test(model);
     const isFlash2Model = /gemini-3\.1/.test(model);
     const isSizeSupported = isProModel || isFlash2Model;
-    $('#cig_image_size_container').toggle(isSizeSupported);
-    $('#cig_flash2_options').toggle(isFlash2Model);
+    const isTokenReply = provider === 'tokenreply';
+    $('#cig_image_size_container').toggle(isSizeSupported && !isTokenReply);
+    $('#cig_flash2_options').toggle(isFlash2Model && !isTokenReply);
     $('#cig_chatgpt_note').toggle(isOpenAiImageModel(model));
+    $('#cig_tokenreply_note').toggle(isTokenReply);
+    $('#cig_avatar_reference_option').toggle(!isTokenReply);
 
-    if (isSizeSupported) {
+    if (isSizeSupported && !isTokenReply) {
         updateSizeDropdown(model, isFlash2Model);
     }
 }
@@ -557,7 +567,9 @@ async function buildMessages(prompt, sender = null, messageId = null) {
         contentParts.push({ type: 'text', text: prompt });
     }
 
-    if (settings.use_previous_image && settings.gallery && settings.gallery.length > 0) {
+    const supportsReferenceImages = getModelDefinition(settings.provider || 'makersuite', settings.model)?.supportsReferenceImages !== false;
+
+    if (supportsReferenceImages && settings.use_previous_image && settings.gallery && settings.gallery.length > 0) {
         const dataUrl = await galleryItemToDataUrl(settings.gallery[0]);
         if (dataUrl) {
             console.log(`[${extensionName}] Adding previous generated image as reference`);
@@ -569,7 +581,7 @@ async function buildMessages(prompt, sender = null, messageId = null) {
         }
     }
 
-    if (settings.use_avatars) {
+    if (supportsReferenceImages && settings.use_avatars) {
         const charAvatarData = await getCharacterAvatar();
         if (charAvatarData) {
             console.log(`[${extensionName}] Adding character avatar for: ${charAvatarData.name}`);
@@ -581,7 +593,7 @@ async function buildMessages(prompt, sender = null, messageId = null) {
         }
     }
 
-    if (settings.use_avatars) {
+    if (supportsReferenceImages && settings.use_avatars) {
         const userAvatarData = await getUserAvatar();
         if (userAvatarData) {
             console.log(`[${extensionName}] Adding user avatar for: ${userAvatarData.name}`);
@@ -683,6 +695,22 @@ async function generateImageFromPrompt(prompt, sender = null, messageId = null) 
 
     if (selectedProvider === 'linkapi' && settings.linkapi_use_legacy_routing === true) {
         return await generateLegacyLinkApiImage(settings, messages);
+    }
+
+    if (selectedProvider === 'tokenreply') {
+        const transport = resolveTransport(selectedProvider, settings.model);
+        const provider = getProviderDefinition(selectedProvider);
+
+        if (transport === 'openAiImages') {
+            return await requestOpenAiImages({
+                apiKey: getProviderApiKey(settings, selectedProvider),
+                model: settings.model,
+                prompt: extractPromptText(messages),
+                baseUrl: provider.transports.openAiImages.baseUrl,
+            });
+        }
+
+        throw new Error(`No TokenReply transport is configured for model: ${settings.model}`);
     }
 
     if (selectedProvider === 'linkapi') {

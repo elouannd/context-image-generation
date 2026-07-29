@@ -21,6 +21,7 @@
                     <select id="cig_provider" class="cig-setting">
                         <option value="makersuite">Google AI Studio</option>
                         <option value="linkapi">LinkAPI</option>
+                        <option value="tokenreply">TokenReply (Experimental)</option>
                         <option value="openrouter">OpenRouter</option>
                     </select>
                 </div>
@@ -46,6 +47,11 @@
                     </label>
                 </details>
             </div>
+
+            <!-- TokenReply Settings -->
+            <div id="cig_tokenreply_container" class="flex-container flexFlowColumn" style="display: none;">
+                <small><b>Experimental:</b> TokenReply uses <code>grok-imagine-image</code> through <code>https://api.tokenreply.com/v1/images/generations</code>. Only text prompts are sent; image-size and reference-image options stay disabled until a live compatibility check verifies them.</small>
+            </div>
             <!-- Model Selection -->
             <div class="flex-container">
                 <div class="flex1">
@@ -55,6 +61,9 @@
                     </select>
                     <small id="cig_chatgpt_note" style="display: none; opacity: 0.8;">
                         ChatGPT models: text prompt only — avatar/reference images are not supported.
+                    </small>
+                    <small id="cig_tokenreply_note" style="display: none; opacity: 0.8;">
+                        Experimental: TokenReply Grok uses a minimal text-only OpenAI Images request. Image size and reference images are not sent.
                     </small>
                 </div>
             </div>
@@ -119,7 +128,7 @@
 
             <!-- Reference Options -->
             <div class="flex-container flexFlowColumn">
-                <label class="checkbox_label" title="Include character and persona avatars as reference images">
+                <label id="cig_avatar_reference_option" class="checkbox_label" title="Include character and persona avatars as reference images">
                     <input type="checkbox" id="cig_use_avatars" class="cig-setting" />
                     <span>Use avatar references</span>
                 </label>
