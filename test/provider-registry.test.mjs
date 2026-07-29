@@ -21,8 +21,10 @@ test('routes every LinkAPI model exposed by the built-in UI', () => {
         assert.equal(resolveTransport('linkapi', model), transport, model);
     }
 });
-test('routes TokenReply Grok through OpenAI Images', () => {
-    assert.equal(resolveTransport('tokenreply', 'grok-imagine-image'), 'openAiImages');
+test('routes both built-in TokenReply image models through OpenAI Images', () => {
+    for (const modelId of ['grok-imagine-image', 'grok-imagine-image-quality']) {
+        assert.equal(resolveTransport('tokenreply', modelId), 'openAiImages');
+    }
 });
 
 test('TokenReply Grok starts with a minimal experimental Images payload', () => {
