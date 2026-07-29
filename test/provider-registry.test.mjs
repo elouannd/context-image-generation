@@ -76,7 +76,7 @@ test('resolves a declarative OpenAI Images fixture without a provider-name branc
     const start = index.indexOf('async function generateImageFromPrompt');
     const end = index.indexOf('// Resolve the <img> src', start);
     const generation = index.slice(start, end);
-    assert.match(generation, /const providerRoute = resolveProviderRoute\(selectedProvider, settings\.model\);/);
+    assert.match(generation, /let providerRoute = resolveProviderRoute\(selectedProvider, settings\.model\);/);
     assert.doesNotMatch(generation, /selectedProvider === 'tokenreply'/);
 });
 

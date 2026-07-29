@@ -38,3 +38,21 @@ test('merges fetched IDs without deleting manual entries', () => {
         { id: 'fresh-model', source: 'fetched' },
     ]);
 });
+test('preserves an explicit custom LinkAPI Gemini transport', () => {
+    const entries = updateLocalModelEntries([], {
+        type: 'upsert',
+        id: 'gemini-custom-image',
+        source: 'manual',
+        transport: 'sillyTavernGeminiProxy',
+        supportsReferenceImages: true,
+        supportsSize: false,
+    });
+
+    assert.deepEqual(entries, [{
+        id: 'gemini-custom-image',
+        source: 'manual',
+        transport: 'sillyTavernGeminiProxy',
+        supportsReferenceImages: true,
+        supportsSize: false,
+    }]);
+});

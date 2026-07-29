@@ -29,7 +29,7 @@
             </div>
 
             <!-- LinkAPI Settings -->
-            <div id="cig_linkapi_container" class="flex-container flexFlowColumn" style="display: none;">
+            <div id="cig_provider_advanced_container" class="flex-container flexFlowColumn" style="display: none;">
                 <small>Used only for image generation. Gemini proxy URL: https://api.linkapi.ai (do not add /v1).</small>
 
                 <details class="cig_linkapi_advanced" style="margin-top: 5px;">
@@ -61,6 +61,10 @@
                 <select id="cig_managed_model_list" size="4" class="text_pole" style="width: 100%; margin-top: 5px;"></select>
                 <div class="flex-container" style="margin-top: 5px;">
                     <input id="cig_managed_model_id" class="text_pole flex1" type="text" placeholder="Actual model ID" autocomplete="off" />
+                <div id="cig_managed_model_transport_container" class="flex-container flexFlowColumn" style="margin-top: 5px;">
+                    <label for="cig_managed_model_transport">Route for this model</label>
+                    <select id="cig_managed_model_transport" class="text_pole"></select>
+                </div>
                 </div>
                 <div class="flex-container" style="margin-top: 5px; gap: 5px; flex-wrap: wrap;">
                     <input id="cig_add_model" class="menu_button" type="button" value="Add model" />

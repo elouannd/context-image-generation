@@ -129,3 +129,11 @@ No live-provider request was performed while writing this document. Before claim
 ## Historical implementation milestones
 
 The LinkAPI fork began with Gemini-compatible proxy support (`0d90a1f`). Direct OpenAI Images API support and safe helpers followed (`e06d3a8`, `4eeb2ac`, `2b95ede`), then model discovery, reload preservation, and logging (`6349935`, `2f92489`, `928fb65`). Later fork work added granular avatar toggles, swipe regeneration, and file-backed gallery storage. Refer to Git history for line-level provenance; this guide describes the current combined behavior.
+
+## Provider hardening follow-up
+
+The Model Manager now records the route for a manually added model. For providers with multiple declared transports, choose the matching route before saving: **Gemini-compatible proxy** for Gemini-style models and **OpenAI Images API** for direct Images models. The route is stored with the model ID; it is not guessed later.
+
+TokenReply model discovery keeps only `grok-imagine-image*` IDs. A model-list response containing ordinary chat models therefore cannot add them to the image-model selector.
+
+Generation requests are coordinated by their target. Starting the same message or prompt again while it is already in progress is rejected before a second provider request is sent.
