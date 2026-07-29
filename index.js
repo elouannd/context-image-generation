@@ -58,8 +58,7 @@ const defaultSettings = {
     thinking_level: 'auto',
     use_google_search: false,
     auto_generate: 'off',
-    use_char_avatar: false,
-    use_user_avatar: false,
+    use_avatars: false,
     regenerate_on_swipe: false,
     include_descriptions: false,
     use_previous_image: false,
@@ -266,15 +265,13 @@ async function loadSettings() {
         }
     }
 
-    // Migrate the legacy single "use_avatars" toggle to the two independent toggles.
-    // Runs once: after migrating, the old key is deleted so it can't override later choices.
+    // Restore the single avatar-reference preference. Existing split settings
+    // migrate once: either previously enabled avatar keeps references enabled.
     const cigSettings = extension_settings[extensionName];
-    if (cigSettings.use_avatars !== undefined) {
-        if (cigSettings.use_avatars === true) {
-            cigSettings.use_char_avatar = true;
-            cigSettings.use_user_avatar = true;
-        }
-        delete cigSettings.use_avatars;
+    if (cigSettings.use_char_avatar !== undefined || cigSettings.use_user_avatar !== undefined) {
+        cigSettings.use_avatars = Boolean(cigSettings.use_char_avatar || cigSettings.use_user_avatar);
+        delete cigSettings.use_char_avatar;
+        delete cigSettings.use_user_avatar;
     }
 
     $('#cig_provider').val(extension_settings[extensionName].provider);
@@ -285,8 +282,7 @@ async function loadSettings() {
     $('#cig_image_size').val(extension_settings[extensionName].image_size);
     $('#cig_thinking_level').val(extension_settings[extensionName].thinking_level);
     $('#cig_use_google_search').prop('checked', extension_settings[extensionName].use_google_search);
-    $('#cig_use_char_avatar').prop('checked', extension_settings[extensionName].use_char_avatar);
-    $('#cig_use_user_avatar').prop('checked', extension_settings[extensionName].use_user_avatar);
+    $('#cig_use_avatars').prop('checked', extension_settings[extensionName].use_avatars);
     $('#cig_include_descriptions').prop('checked', extension_settings[extensionName].include_descriptions);
     $('#cig_use_previous_image').prop('checked', extension_settings[extensionName].use_previous_image);
     $('#cig_regenerate_on_swipe').prop('checked', extension_settings[extensionName].regenerate_on_swipe);
@@ -497,7 +493,7 @@ async function buildMessages(prompt, sender = null, messageId = null) {
         }
     }
 
-    if (settings.use_char_avatar) {
+    if (settings.use_avatars) {
         const charAvatarData = await getCharacterAvatar();
         if (charAvatarData) {
             console.log(`[${extensionName}] Adding character avatar for: ${charAvatarData.name}`);
@@ -509,7 +505,7 @@ async function buildMessages(prompt, sender = null, messageId = null) {
         }
     }
 
-    if (settings.use_user_avatar) {
+    if (settings.use_avatars) {
         const userAvatarData = await getUserAvatar();
         if (userAvatarData) {
             console.log(`[${extensionName}] Adding user avatar for: ${userAvatarData.name}`);
@@ -1034,13 +1030,8 @@ jQuery(async () => {
         saveSettingsDebounced();
     });
 
-    $('#cig_use_char_avatar').on('change', function () {
-        extension_settings[extensionName].use_char_avatar = $(this).prop('checked');
-        saveSettingsDebounced();
-    });
-
-    $('#cig_use_user_avatar').on('change', function () {
-        extension_settings[extensionName].use_user_avatar = $(this).prop('checked');
+    $('#cig_use_avatars').on('change', function () {
+        extension_settings[extensionName].use_avatars = $(this).prop('checked');
         saveSettingsDebounced();
     });
 
