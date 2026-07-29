@@ -385,6 +385,8 @@ function toggleImageSizeVisibility() {
     const settings = extension_settings[extensionName];
     const provider = settings.provider || 'makersuite';
     const model = settings.model;
+    const modelDefinition = getModelDefinition(provider, model);
+    const supportsReferenceImages = modelDefinition?.supportsReferenceImages !== false;
     const isProModel = /gemini-3-pro/.test(model);
     const isFlash2Model = /gemini-3\.1/.test(model);
     const isSizeSupported = isProModel || isFlash2Model;
@@ -393,8 +395,8 @@ function toggleImageSizeVisibility() {
     $('#cig_flash2_options').toggle(isFlash2Model && !isTokenReply);
     $('#cig_chatgpt_note').toggle(isOpenAiImageModel(model));
     $('#cig_tokenreply_note').toggle(isTokenReply);
-    $('#cig_avatar_reference_option').toggle(!isTokenReply);
-    $('#cig_previous_image_reference_option').toggle(!isTokenReply);
+    $('#cig_avatar_reference_option').toggle(supportsReferenceImages);
+    $('#cig_previous_image_reference_option').toggle(supportsReferenceImages);
 
     if (isSizeSupported && !isTokenReply) {
         updateSizeDropdown(model, isFlash2Model);

@@ -44,16 +44,26 @@ test('exposes TokenReply as an experimental built-in profile with no model disco
     assert.match(dispatcher, /baseUrl: provider\.transports\.openAiImages\.baseUrl/);
     assert.doesNotMatch(index, /fetchTokenReplyModels/);
 });
-test('hides both unsupported reference controls for TokenReply while retaining them elsewhere', async () => {
+test('uses resolved model capabilities to hide unsupported references while retaining Gemini references', async () => {
     const [index, settings] = await Promise.all([
         readFile(new URL('../index.js', import.meta.url), 'utf8'),
         readFile(new URL('../settings.html', import.meta.url), 'utf8'),
     ]);
 
+    for (const [providerId, modelId] of [
+        ['linkapi', 'gpt-image-2-c'],
+        ['linkapi', 'dall-e-3'],
+        ['tokenreply', 'grok-imagine-image'],
+    ]) {
+        assert.equal(getModelDefinition(providerId, modelId).supportsReferenceImages, false, `${providerId}/${modelId}`);
+    }
+    assert.notEqual(getModelDefinition('linkapi', 'gemini-2.5-flash-image')?.supportsReferenceImages, false);
     assert.match(settings, /id="cig_avatar_reference_option"/);
     assert.match(settings, /id="cig_previous_image_reference_option"/);
-    assert.match(index, /\$\('#cig_avatar_reference_option'\)\.toggle\(!isTokenReply\)/);
-    assert.match(index, /\$\('#cig_previous_image_reference_option'\)\.toggle\(!isTokenReply\)/);
+    assert.match(index, /const modelDefinition = getModelDefinition\(provider, model\);/);
+    assert.match(index, /const supportsReferenceImages = modelDefinition\?\.supportsReferenceImages !== false;/);
+    assert.match(index, /\$\('#cig_avatar_reference_option'\)\.toggle\(supportsReferenceImages\)/);
+    assert.match(index, /\$\('#cig_previous_image_reference_option'\)\.toggle\(supportsReferenceImages\)/);
 });
 test('resolves a declarative OpenAI Images fixture without a provider-name branch', async () => {
     PROVIDERS.fixture = {

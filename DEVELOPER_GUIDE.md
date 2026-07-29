@@ -69,7 +69,7 @@ The implemented Gemini-compatible proxy is `https://api.linkapi.ai`, while the i
 
 `PROVIDER_MODELS` is the built-in allowlist displayed before a model fetch. LinkAPI adds a default `gpt-image-2-c` option. The **Fetch models** control calls `https://linkapi.ai/v1/models`, keeps only IDs beginning with `gpt-image` or `dall-e`, and adds them to the LinkAPI selector for the current page session.
 
-`isOpenAiImageModel()` is the routing boundary: any selected model whose ID begins with `gpt-image` or `dall-e` takes the direct, text-only Images API route. Keep that predicate and the UI notice in `settings.html` aligned if new model families are added.
+`resolveProviderRoute(providerId, modelId)` is the routing boundary for adapter dispatch. It resolves the curated model metadata (including the LinkAPI `gpt-image`/`dall-e` fallback) and transport; do not make new provider routes depend on the UI-only `isOpenAiImageModel()` predicate. Keep each model capability, including `supportsReferenceImages`, aligned with the controls in `settings.html`.
 
 Aspect ratios map to Images API sizes as follows:
 

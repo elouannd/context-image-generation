@@ -125,7 +125,7 @@ Aliases: `/proimg`, `/geminiimg`
 | Model | Gemini controls apply to Gemini models. LinkAPI also offers direct, text-only `gpt-image*`/`dall-e*` models. TokenReply offers only experimental `grok-imagine-image`. |
 | Fetch models | LinkAPI only; discovers matching `gpt-image*`/`dall-e*` IDs for the current session. TokenReply has no model discovery. |
 | Aspect ratio / image size | Gemini-compatible controls retain their model-specific behavior. TokenReply hides image size until live verification confirms its accepted field. |
-| Avatar / previous-image references | Available on compatible routes; hidden for TokenReply and not sent to direct LinkAPI Images models. |
+| Avatar / previous-image references | Available only to models whose provider metadata supports reference images; hidden for TokenReply and direct LinkAPI Images models. |
 | LinkAPI recovery | Advanced, manual-only legacy-routing switch; never an automatic fallback. |
 | Thinking Level | Flash 2 only: Auto, Minimal, Low, Medium, High. |
 | Google Search | Flash 2 only: Enable web search for references. |
@@ -136,7 +136,7 @@ Aliases: `/proimg`, `/geminiimg`
 | System Instruction | Customize instructions for the image model. |
 
 ## Troubleshooting
-- Swiping a picture will result in an error.
+- **Regenerate on Image Swipe** is opt-in. When enabled, swipe right past the last Context Image Generation image on a message to create a new variation; other image swipes keep their normal behavior.
 
 
 ## To-Do
