@@ -25,8 +25,8 @@ import { MEDIA_DISPLAY, MEDIA_SOURCE, MEDIA_TYPE, SCROLL_BEHAVIOR, SWIPE_DIRECTI
 import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
 import { SlashCommand } from '../../../slash-commands/SlashCommand.js';
 import { ARGUMENT_TYPE, SlashCommandArgument } from '../../../slash-commands/SlashCommandArgument.js';
-import { getModelDefinition, resolveProviderRoute, getProviderDefinitions } from './lib/providers/registry.js';
-import { getModelFallback, projectProviderUi } from './lib/providers/ui-projection.js';
+import { getModelDefinition, resolveProviderRoute, getProviderDefinitions, requiresAdapterRoute } from './lib/providers/registry.js';
+import { getModelFallback, projectProviderControls, projectProviderOptions, projectProviderUi } from './lib/providers/ui-projection.js';
 import { buildOpenAiImagesRequest, parseOpenAiImagesResponse } from './lib/providers/openai-images.js';
 import { dispatchProviderRoute } from './lib/providers/dispatch.js';
 
@@ -235,7 +235,7 @@ window.cigDebug = Object.assign(window.cigDebug || {}, {
 
 function renderProviderDropdown() {
     const $providerSelect = $('#cig_provider').empty();
-    for (const provider of getProviderDefinitions()) {
+    for (const provider of projectProviderOptions()) {
         $providerSelect.append($('<option>').val(provider.id).text(provider.label || provider.id));
     }
 }
@@ -331,8 +331,9 @@ function toggleProviderSpecificSettings() {
 
 function toggleImageSizeVisibility() {
     const settings = extension_settings[extensionName];
-    const ui = projectProviderUi(settings.provider || 'makersuite', settings.model);
+    const ui = projectProviderControls(settings.provider || 'makersuite', settings.model, settings.image_size);
     if (!ui) return;
+    if (settings.image_size !== ui.imageSize) settings.image_size = ui.imageSize;
     const hasImageSizes = ui.imageSizeOptions.length > 0;
     $('#cig_image_size_container').toggle(hasImageSizes);
     $('#cig_flash2_options').toggle(ui.supportsThinking || ui.supportsGoogleSearch);
@@ -637,7 +638,7 @@ async function generateImageFromPrompt(prompt, sender = null, messageId = null) 
             requestSillyTavernImage,
         });
     }
-    if (providerRoute.provider) {
+    if (requiresAdapterRoute(providerRoute)) {
         throw new Error(`No ${providerRoute.provider.id} transport is configured for model: ${settings.model}`);
     }
     const isFlash2 = /gemini-3\.1/.test(settings.model);
