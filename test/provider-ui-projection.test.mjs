@@ -40,6 +40,7 @@ test('projects a fixture provider UI entirely from registry metadata', () => {
             requiresApiKey: true,
             apiKeyLabel: 'Fixture API Key',
             supportsModelDiscovery: false,
+            modelDiscoveryExperimental: false,
             showsLegacyRecovery: false,
             providerInfo: undefined,
             modelNote: undefined,
@@ -82,4 +83,14 @@ test('retains dynamic LinkAPI models and validates image size metadata', () => {
     const pro = projectProviderControls('linkapi', 'gemini-3-pro-image-preview', '512');
     assert.equal(pro.imageSize, '');
     assert.deepEqual(pro.imageSizeOptions[0], { value: '1K', label: '1K' });
+});
+
+test('projects a persisted custom TokenReply model with conservative image capabilities', () => {
+    const ui = projectProviderUi('tokenreply', 'custom-tokenreply-image', {
+        localEntries: [{ id: 'custom-tokenreply-image', source: 'manual' }],
+    });
+
+    assert.equal(ui.models.at(-1).id, 'custom-tokenreply-image');
+    assert.equal(ui.supportsReferenceImages, false);
+    assert.equal(ui.imageSizeOptions.length, 0);
 });

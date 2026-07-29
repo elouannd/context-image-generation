@@ -34,12 +34,13 @@ test('TokenReply Grok starts with a minimal experimental Images payload', () => 
     assert.equal(getModelDefinition('tokenreply', 'grok-imagine-image').supportsSize, undefined);
     assert.equal(getModelDefinition('tokenreply', 'grok-imagine-image').status, 'experimental');
 });
-test('declares TokenReply as an experimental no-discovery profile', () => {
+test('declares TokenReply as an experimental discovery profile', () => {
     const provider = getProviderDefinition('tokenreply');
     const ui = projectProviderUi('tokenreply', 'grok-imagine-image');
     assert.equal(provider.label, 'TokenReply (Experimental)');
     assert.equal(provider.transports.openAiImages.baseUrl, 'https://api.tokenreply.com/v1');
-    assert.equal(ui.supportsModelDiscovery, false);
+    assert.equal(ui.supportsModelDiscovery, true);
+    assert.equal(ui.modelDiscoveryExperimental, true);
     assert.equal(ui.requiresApiKey, true);
     assert.match(ui.providerInfo, /images\/generations/);
 });

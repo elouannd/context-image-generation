@@ -27,6 +27,8 @@ import { SlashCommand } from '../../../slash-commands/SlashCommand.js';
 import { ARGUMENT_TYPE, SlashCommandArgument } from '../../../slash-commands/SlashCommandArgument.js';
 import { getModelDefinition, resolveProviderRoute, getProviderDefinitions, requiresAdapterRoute } from './lib/providers/registry.js';
 import { getModelFallback, projectProviderControls, projectProviderOptions, projectProviderUi } from './lib/providers/ui-projection.js';
+import { mergeFetchedModelEntries } from './lib/providers/model-manager.js';
+import { fetchProviderModels } from './lib/providers/model-discovery.js';
 import { buildOpenAiImagesRequest, parseOpenAiImagesResponse } from './lib/providers/openai-images.js';
 import { dispatchProviderRoute } from './lib/providers/dispatch.js';
 
@@ -38,6 +40,7 @@ const defaultSettings = {
     model: 'gemini-2.5-flash-image',
     linkapi_key: '',
     provider_keys: {},
+    provider_models: {},
     linkapi_use_legacy_routing: false,
     aspect_ratio: '1:1',
     image_size: '',
@@ -67,8 +70,17 @@ function setProviderApiKey(settings, providerId, value) {
     if (providerId === 'linkapi') { settings.linkapi_key = value; settings.provider_keys.linkapi = value; }
 }
 
-// Runtime-only list of image models fetched from LinkAPI /v1/models (not persisted).
-let fetchedLinkApiModels = [];
+function getProviderModelEntries(settings, providerId) {
+    const entries = settings.provider_models?.[providerId];
+    return Array.isArray(entries) ? entries : [];
+}
+
+function setProviderModelEntries(settings, providerId, entries) {
+    if (!settings.provider_models || typeof settings.provider_models !== 'object' || Array.isArray(settings.provider_models)) {
+        settings.provider_models = {};
+    }
+    settings.provider_models[providerId] = entries;
+}
 
 // --- LinkAPI ChatGPT (gpt-image) helpers (pure, text-prompt only) ---
 
@@ -199,31 +211,29 @@ async function requestOpenAiImages({ apiKey, model, prompt, size, baseUrl }) {
     }
     return { imageData: arrayBufferToBase64(await imageResponse.arrayBuffer()), mimeType: 'image/png' };
 }
-async function fetchLinkApiModels() {
+async function fetchManagedProviderModels() {
     const settings = extension_settings[extensionName];
-    const key = getProviderApiKey(settings, 'linkapi');
-    if (!key) {
-        toastr.warning('Enter a LinkAPI key first.', 'Context Image Generation');
+    const providerId = settings.provider || 'makersuite';
+    const ui = projectProviderUi(providerId, settings.model, { localEntries: getProviderModelEntries(settings, providerId) });
+    if (!ui?.supportsModelDiscovery) return;
+
+    const key = getProviderApiKey(settings, providerId);
+    if (ui.requiresApiKey && !key) {
+        toastr.warning(`Enter a ${ui.label} key first.`, 'Context Image Generation');
         return;
     }
+
     try {
-        const resp = await fetch('https://linkapi.ai/v1/models', {
-            headers: { 'Authorization': `Bearer ${key}` },
-        });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const json = await resp.json();
-        const ids = (json.data || [])
-            .map(m => m.id)
-            .filter(id => /^(gpt-image|dall-e)/i.test(id));
-        fetchedLinkApiModels = ids.map(id => ({ id, name: id }));
+        const fetched = await fetchProviderModels({ providerId, apiKey: key });
+        setProviderModelEntries(settings, providerId, mergeFetchedModelEntries(getProviderModelEntries(settings, providerId), fetched.map((entry) => entry.id)));
         updateModelDropdown();
-        toastr.success(`Loaded ${ids.length} image model(s).`, 'Context Image Generation');
-    } catch (e) {
-        console.error(`[${extensionName}] Fetch models failed:`, e);
-        toastr.error(`Failed to fetch models: ${e.message}`, 'Context Image Generation');
+        saveSettingsDebounced();
+        toastr.success(`Loaded ${fetched.length} model(s).`, 'Context Image Generation');
+    } catch (error) {
+        console.error(`[${extensionName}] Fetch models failed:`, error);
+        toastr.error(`Failed to fetch models: ${error.message}`, 'Context Image Generation');
     }
 }
-
 // Dev aid: reach the pure helpers from the DevTools console for verification.
 window.cigDebug = Object.assign(window.cigDebug || {}, {
     isOpenAiImageModel,
@@ -243,26 +253,17 @@ function renderProviderDropdown() {
 function updateModelDropdown() {
     const settings = extension_settings[extensionName];
     const providerId = settings.provider || 'makersuite';
-    const ui = projectProviderUi(providerId, settings.model);
+    const localEntries = getProviderModelEntries(settings, providerId);
+    const ui = projectProviderUi(providerId, settings.model, { localEntries });
     if (!ui) return;
     const $modelSelect = $('#cig_model').empty();
-    const seen = new Set();
-    const addOption = (id, label) => {
-        if (seen.has(id)) return;
-        seen.add(id);
-        $modelSelect.append($('<option>').val(id).text(label));
-    };
-    for (const model of ui.models) addOption(model.id, model.label);
-    if (ui.supportsModelDiscovery) {
-        for (const model of fetchedLinkApiModels) addOption(model.id, model.name);
-        const current = settings.model;
-        if (current && !seen.has(current) && /^((gpt-image)|(dall-e))/i.test(current)) addOption(current, current);
+    for (const model of ui.models) {
+        $modelSelect.append($('<option>').val(model.id).text(model.label));
     }
-    settings.model = getModelFallback(providerId, settings.model);
+    settings.model = getModelFallback(providerId, settings.model, localEntries);
     $modelSelect.val(settings.model);
     toggleImageSizeVisibility();
-}
-async function loadSettings() {
+}async function loadSettings() {
     extension_settings[extensionName] = extension_settings[extensionName] || {};
     let settingsMigrated = false;
 
@@ -278,6 +279,10 @@ async function loadSettings() {
     const cigSettings = extension_settings[extensionName];
     if (!cigSettings.provider_keys || typeof cigSettings.provider_keys !== 'object' || Array.isArray(cigSettings.provider_keys)) {
         cigSettings.provider_keys = {};
+        settingsMigrated = true;
+    }
+    if (!cigSettings.provider_models || typeof cigSettings.provider_models !== 'object' || Array.isArray(cigSettings.provider_models)) {
+        cigSettings.provider_models = {};
         settingsMigrated = true;
     }
     if (!Object.hasOwn(cigSettings.provider_keys, 'linkapi') && cigSettings.linkapi_key) {
@@ -320,7 +325,8 @@ async function loadSettings() {
 
 function toggleProviderSpecificSettings() {
     const settings = extension_settings[extensionName];
-    const ui = projectProviderUi(settings.provider || 'makersuite', settings.model);
+    const providerId = settings.provider || 'makersuite';
+    const ui = projectProviderUi(providerId, settings.model, { localEntries: getProviderModelEntries(settings, providerId) });
     if (!ui) return;
     $('#cig_provider_key_container').toggle(ui.requiresApiKey);
     $('#cig_linkapi_container').toggle(ui.supportsModelDiscovery || ui.showsLegacyRecovery);
@@ -331,7 +337,8 @@ function toggleProviderSpecificSettings() {
 
 function toggleImageSizeVisibility() {
     const settings = extension_settings[extensionName];
-    const ui = projectProviderControls(settings.provider || 'makersuite', settings.model, settings.image_size);
+    const providerId = settings.provider || 'makersuite';
+    const ui = projectProviderControls(providerId, settings.model, settings.image_size, { localEntries: getProviderModelEntries(settings, providerId) });
     if (!ui) return;
     if (settings.image_size !== ui.imageSize) settings.image_size = ui.imageSize;
     const hasImageSizes = ui.imageSizeOptions.length > 0;
@@ -489,7 +496,8 @@ async function buildMessages(prompt, sender = null, messageId = null) {
         contentParts.push({ type: 'text', text: prompt });
     }
 
-    const supportsReferenceImages = getModelDefinition(settings.provider || 'makersuite', settings.model)?.supportsReferenceImages !== false;
+    const providerId = settings.provider || 'makersuite';
+    const supportsReferenceImages = projectProviderUi(providerId, settings.model, { localEntries: getProviderModelEntries(settings, providerId) })?.supportsReferenceImages !== false;
 
     if (supportsReferenceImages && settings.use_previous_image && settings.gallery && settings.gallery.length > 0) {
         const dataUrl = await galleryItemToDataUrl(settings.gallery[0]);
