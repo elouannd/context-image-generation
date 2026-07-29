@@ -94,3 +94,13 @@ test('projects a persisted custom TokenReply model with conservative image capab
     assert.equal(ui.supportsReferenceImages, false);
     assert.equal(ui.imageSizeOptions.length, 0);
 });
+
+test('keeps LinkAPI advanced recovery controls separate from generic model discovery', async () => {
+    const [index, settings] = await Promise.all([
+        readFile(new URL('../index.js', import.meta.url), 'utf8'),
+        readFile(new URL('../settings.html', import.meta.url), 'utf8'),
+    ]);
+
+    assert.doesNotMatch(index, /#cig_linkapi_container'\)\.toggle\(ui\.supportsModelDiscovery \|\| ui\.showsLegacyRecovery\)/);
+    assert.match(settings, /id="cig_provider_advanced_container"/);
+});

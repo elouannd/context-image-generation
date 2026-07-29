@@ -43,3 +43,14 @@ test('rejects a failed model fetch without returning partial entries', async () 
         /503.*Upstream unavailable/,
     );
 });
+test('filters TokenReply discovery to Grok image model IDs', async () => {
+    const models = await fetchProviderModels({
+        providerId: 'tokenreply',
+        apiKey: 'test-key',
+        fetchImpl: async () => new Response(JSON.stringify({
+            data: [{ id: 'grok-imagine-image' }, { id: 'gpt-4o' }],
+        }), { status: 200 }),
+    });
+
+    assert.deepEqual(models, [{ id: 'grok-imagine-image', source: 'fetched' }]);
+});

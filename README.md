@@ -156,3 +156,7 @@ This project is released into the public domain under [The Unlicense](LICENSE). 
 - Original extension by **Elouann** — [elouannd/context-image-generation](https://github.com/elouannd/context-image-generation).
 - LinkAPI provider support added in this fork by **BlueOwler**.
 - Created for use with [SillyTavern](https://github.com/SillyTavern/SillyTavern).
+
+### Provider hardening
+
+When adding a manual model ID for a provider that has more than one route, select its route in **Manage models** before saving. TokenReply model fetching now keeps only `grok-imagine-image*` IDs. Repeating the same generation while it is in progress is blocked, preventing accidental duplicate paid requests.

@@ -25,12 +25,13 @@ import { MEDIA_DISPLAY, MEDIA_SOURCE, MEDIA_TYPE, SCROLL_BEHAVIOR, SWIPE_DIRECTI
 import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
 import { SlashCommand } from '../../../slash-commands/SlashCommand.js';
 import { ARGUMENT_TYPE, SlashCommandArgument } from '../../../slash-commands/SlashCommandArgument.js';
-import { getModelDefinition, resolveProviderRoute, getProviderDefinitions, requiresAdapterRoute } from './lib/providers/registry.js';
+import { getModelDefinition, getProviderDefinition, resolveProviderRoute, getProviderDefinitions, requiresAdapterRoute } from './lib/providers/registry.js';
 import { getModelFallback, projectProviderControls, projectProviderOptions, projectProviderUi } from './lib/providers/ui-projection.js';
 import { mergeFetchedModelEntries, updateLocalModelEntries } from './lib/providers/model-manager.js';
 import { fetchProviderModels } from './lib/providers/model-discovery.js';
 import { buildOpenAiImagesRequest, parseOpenAiImagesResponse } from './lib/providers/openai-images.js';
 import { dispatchProviderRoute } from './lib/providers/dispatch.js';
+import { createGenerationCoordinator } from './lib/generation-coordinator.js';
 
 const extensionName = 'context-image-generation';
 const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
@@ -57,6 +58,7 @@ const defaultSettings = {
 };
 
 const MAX_GALLERY_SIZE = 50;
+const generationCoordinator = createGenerationCoordinator();
 
 function getProviderApiKey(settings, providerId) {
     const providerKeys = settings.provider_keys;
@@ -331,7 +333,7 @@ function toggleProviderSpecificSettings() {
     const ui = projectProviderUi(providerId, settings.model, { localEntries: getProviderModelEntries(settings, providerId) });
     if (!ui) return;
     $('#cig_provider_key_container').toggle(ui.requiresApiKey);
-    $('#cig_linkapi_container').toggle(ui.supportsModelDiscovery || ui.showsLegacyRecovery);
+    $('#cig_provider_advanced_container').toggle(ui.showsLegacyRecovery);
     $('#cig_provider_api_key_label').text(ui.apiKeyLabel);
     $('#cig_provider_api_key').val(getProviderApiKey(settings, settings.provider));
     $('#cig_provider_info').text(ui.providerInfo || '').toggle(Boolean(ui.providerInfo));
@@ -351,6 +353,15 @@ function renderModelManager() {
     }
     $list.val(settings.model);
     $('#cig_managed_model_id').val(settings.model || '');
+    const provider = getProviderDefinition(providerId);
+    const selectedEntry = localEntries.find((entry) => entry.id === settings.model);
+    const $transport = $('#cig_managed_model_transport').empty();
+    for (const transport of Object.keys(provider?.transports || {})) {
+        const label = transport === 'sillyTavernGeminiProxy' ? 'Gemini-compatible proxy' : transport === 'openAiImages' ? 'OpenAI Images API' : transport;
+        $transport.append($('<option>').val(transport).text(label));
+    }
+    $transport.val(selectedEntry?.transport || provider?.models?.find((model) => model.id === settings.model)?.transport || $transport.val());
+    $('#cig_managed_model_transport_container').toggle($transport.children().length > 1);
     $('#cig_fetch_provider_models').toggle(ui.supportsModelDiscovery);
     $('#cig_model_discovery_note')
         .text(ui.modelDiscoveryExperimental ? 'Experimental: model discovery uses the provider’s standard /models endpoint. A failed fetch keeps your current list.' : '')
@@ -375,8 +386,9 @@ function saveManagedModel(operation) {
     }
     const previousId = $('#cig_managed_model_list').val();
     const localEntries = getProviderModelEntries(settings, providerId);
+    const transport = $('#cig_managed_model_transport').val() || undefined;
     const type = operation === 'save' && localEntries.some((entry) => entry.id === previousId) ? 'replace' : 'upsert';
-    setProviderModelEntries(settings, providerId, updateLocalModelEntries(localEntries, { type, previousId, id, source: 'manual' }));
+    setProviderModelEntries(settings, providerId, updateLocalModelEntries(localEntries, { type, previousId, id, source: 'manual', transport, supportsReferenceImages: transport === 'sillyTavernGeminiProxy', supportsSize: false }));
     settings.model = id;
     refreshManagedModels();
     saveSettingsDebounced();
@@ -679,12 +691,24 @@ async function generateLegacyLinkApiImage(settings, messages) {
     return await requestSillyTavernImage(requestBody);
 }
 
+function getGenerationKey(prompt, messageId) {
+    return messageId === null || messageId === undefined ? 'prompt:' + String(prompt).trim() : 'message:' + messageId;
+}
+
 async function generateImageFromPrompt(prompt, sender = null, messageId = null) {
+    return await generationCoordinator.run(getGenerationKey(prompt, messageId), () => generateImageFromPromptInternal(prompt, sender, messageId));
+}
+
+async function generateImageFromPromptInternal(prompt, sender = null, messageId = null) {
     const settings = extension_settings[extensionName];
     const messages = await buildMessages(prompt, sender, messageId);
     const selectedProvider = settings.provider || 'makersuite';
 
-    const providerRoute = resolveProviderRoute(selectedProvider, settings.model);
+    let providerRoute = resolveProviderRoute(selectedProvider, settings.model);
+    const localModel = getProviderModelEntries(settings, selectedProvider).find((entry) => entry.id === settings.model);
+    if (!providerRoute.model && localModel?.transport) {
+        providerRoute = { ...providerRoute, model: { id: settings.model, ...localModel }, transport: localModel.transport };
+    }
 
     if (selectedProvider === 'linkapi' && settings.linkapi_use_legacy_routing === true) {
         return await generateLegacyLinkApiImage(settings, messages);
