@@ -43,3 +43,14 @@ test('exposes TokenReply as an experimental built-in profile with no model disco
     assert.match(index, /baseUrl: provider\.transports\.openAiImages\.baseUrl/);
     assert.doesNotMatch(index, /fetchTokenReplyModels/);
 });
+test('hides both unsupported reference controls for TokenReply while retaining them elsewhere', async () => {
+    const [index, settings] = await Promise.all([
+        readFile(new URL('../index.js', import.meta.url), 'utf8'),
+        readFile(new URL('../settings.html', import.meta.url), 'utf8'),
+    ]);
+
+    assert.match(settings, /id="cig_avatar_reference_option"/);
+    assert.match(settings, /id="cig_previous_image_reference_option"/);
+    assert.match(index, /\$\('#cig_avatar_reference_option'\)\.toggle\(!isTokenReply\)/);
+    assert.match(index, /\$\('#cig_previous_image_reference_option'\)\.toggle\(!isTokenReply\)/);
+});

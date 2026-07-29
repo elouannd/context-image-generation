@@ -394,6 +394,7 @@ function toggleImageSizeVisibility() {
     $('#cig_chatgpt_note').toggle(isOpenAiImageModel(model));
     $('#cig_tokenreply_note').toggle(isTokenReply);
     $('#cig_avatar_reference_option').toggle(!isTokenReply);
+    $('#cig_previous_image_reference_option').toggle(!isTokenReply);
 
     if (isSizeSupported && !isTokenReply) {
         updateSizeDropdown(model, isFlash2Model);
