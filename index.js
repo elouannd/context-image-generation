@@ -56,6 +56,8 @@ const defaultSettings = {
     provider: 'makersuite',
     model: 'gemini-2.5-flash-image',
     linkapi_key: '',
+    provider_keys: {},
+    linkapi_use_legacy_routing: false,
     aspect_ratio: '1:1',
     image_size: '',
     thinking_level: 'auto',
@@ -71,6 +73,18 @@ const defaultSettings = {
 };
 
 const MAX_GALLERY_SIZE = 50;
+
+function getProviderApiKey(settings, providerId) {
+    const providerKeys = settings.provider_keys;
+    if (providerKeys && typeof providerKeys === 'object' && typeof providerKeys[providerId] === 'string') return providerKeys[providerId];
+    return providerId === 'linkapi' ? settings.linkapi_key || '' : '';
+}
+
+function setProviderApiKey(settings, providerId, value) {
+    if (!settings.provider_keys || typeof settings.provider_keys !== 'object' || Array.isArray(settings.provider_keys)) settings.provider_keys = {};
+    settings.provider_keys[providerId] = value;
+    if (providerId === 'linkapi') { settings.linkapi_key = value; settings.provider_keys.linkapi = value; }
+}
 
 // Runtime-only list of image models fetched from LinkAPI /v1/models (not persisted).
 let fetchedLinkApiModels = [];
@@ -206,7 +220,7 @@ async function requestOpenAiImages({ apiKey, model, prompt, size, baseUrl }) {
 }
 async function fetchLinkApiModels() {
     const settings = extension_settings[extensionName];
-    const key = settings.linkapi_key;
+    const key = getProviderApiKey(settings, 'linkapi');
     if (!key) {
         toastr.warning('Enter a LinkAPI key first.', 'Context Image Generation');
         return;
@@ -298,26 +312,43 @@ function updateModelDropdown() {
 
 async function loadSettings() {
     extension_settings[extensionName] = extension_settings[extensionName] || {};
+    let settingsMigrated = false;
 
     for (const [key, value] of Object.entries(defaultSettings)) {
         if (extension_settings[extensionName][key] === undefined) {
             extension_settings[extensionName][key] = value;
+            settingsMigrated = true;
         }
     }
 
     // Restore the single avatar-reference preference. Existing split settings
     // migrate once: either previously enabled avatar keeps references enabled.
     const cigSettings = extension_settings[extensionName];
+    if (!cigSettings.provider_keys || typeof cigSettings.provider_keys !== 'object' || Array.isArray(cigSettings.provider_keys)) {
+        cigSettings.provider_keys = {};
+        settingsMigrated = true;
+    }
+    if (!Object.hasOwn(cigSettings.provider_keys, 'linkapi') && cigSettings.linkapi_key) {
+        cigSettings.provider_keys.linkapi = cigSettings.linkapi_key;
+        settingsMigrated = true;
+    }
     if (cigSettings.use_char_avatar !== undefined || cigSettings.use_user_avatar !== undefined) {
         cigSettings.use_avatars = Boolean(cigSettings.use_char_avatar || cigSettings.use_user_avatar);
         delete cigSettings.use_char_avatar;
         delete cigSettings.use_user_avatar;
+        settingsMigrated = true;
     }
+
+    if (settingsMigrated) {
+        saveSettingsDebounced();
+    }
+
 
     $('#cig_provider').val(extension_settings[extensionName].provider);
     updateModelDropdown();
     $('#cig_model').val(extension_settings[extensionName].model);
-    $('#cig_linkapi_key').val(extension_settings[extensionName].linkapi_key);
+    $('#cig_provider_api_key').val(getProviderApiKey(cigSettings, cigSettings.provider || 'makersuite'));
+    $('#cig_linkapi_use_legacy_routing').prop('checked', cigSettings.linkapi_use_legacy_routing);
     $('#cig_aspect_ratio').val(extension_settings[extensionName].aspect_ratio);
     $('#cig_image_size').val(extension_settings[extensionName].image_size);
     $('#cig_thinking_level').val(extension_settings[extensionName].thinking_level);
@@ -336,8 +367,13 @@ async function loadSettings() {
 }
 
 function toggleProviderSpecificSettings() {
-    const provider = extension_settings[extensionName].provider || 'makersuite';
+    const settings = extension_settings[extensionName];
+    const provider = settings.provider || 'makersuite';
+    const supportsProviderKey = provider === 'linkapi' || provider === 'tokenreply';
+    $('#cig_provider_key_container').toggle(supportsProviderKey);
     $('#cig_linkapi_container').toggle(provider === 'linkapi');
+    $('#cig_provider_api_key_label').text(provider === 'linkapi' ? 'LinkAPI API Key' : 'TokenReply API Key');
+    $('#cig_provider_api_key').val(getProviderApiKey(settings, provider));
 }
 
 function toggleImageSizeVisibility() {
@@ -606,7 +642,7 @@ async function generateLegacyLinkApiImage(settings, messages) {
 
     if (isOpenAiImageModel(settings.model)) {
         return await requestLinkApiImage({
-            apiKey: settings.linkapi_key,
+            apiKey: getProviderApiKey(settings, 'linkapi'),
             model: settings.model,
             prompt: extractPromptText(messages),
             size: mapAspectRatioToSize(settings.aspect_ratio),
@@ -645,6 +681,10 @@ async function generateImageFromPrompt(prompt, sender = null, messageId = null) 
     const messages = await buildMessages(prompt, sender, messageId);
     const selectedProvider = settings.provider || 'makersuite';
 
+    if (selectedProvider === 'linkapi' && settings.linkapi_use_legacy_routing === true) {
+        return await generateLegacyLinkApiImage(settings, messages);
+    }
+
     if (selectedProvider === 'linkapi') {
         const transport = resolveTransport(selectedProvider, settings.model);
         const provider = getProviderDefinition(selectedProvider);
@@ -653,7 +693,7 @@ async function generateImageFromPrompt(prompt, sender = null, messageId = null) 
             const requestBody = buildGeminiProxyRequest({
                 model: settings.model,
                 messages,
-                apiKey: settings.linkapi_key,
+                apiKey: getProviderApiKey(settings, 'linkapi'),
                 baseUrl: provider.transports.sillyTavernGeminiProxy.baseUrl,
                 aspectRatio: settings.aspect_ratio,
                 imageSize: settings.image_size,
@@ -667,7 +707,7 @@ async function generateImageFromPrompt(prompt, sender = null, messageId = null) 
         if (transport === 'openAiImages') {
             const modelDefinition = getModelDefinition(selectedProvider, settings.model);
             return await requestOpenAiImages({
-                apiKey: settings.linkapi_key,
+                apiKey: getProviderApiKey(settings, 'linkapi'),
                 model: settings.model,
                 prompt: extractPromptText(messages),
                 size: modelDefinition?.supportsSize ? mapAspectRatioToSize(settings.aspect_ratio) : undefined,
@@ -1097,8 +1137,17 @@ jQuery(async () => {
         saveSettingsDebounced();
     });
 
-    $('#cig_linkapi_key').on('input', function () {
-        extension_settings[extensionName].linkapi_key = $(this).val();
+    $('#cig_provider_api_key').on('input', function () {
+        const settings = extension_settings[extensionName];
+        const provider = settings.provider || 'makersuite';
+        if (provider === 'linkapi' || provider === 'tokenreply') {
+            setProviderApiKey(settings, provider, $(this).val());
+            saveSettingsDebounced();
+        }
+    });
+
+    $('#cig_linkapi_use_legacy_routing').on('change', function () {
+        extension_settings[extensionName].linkapi_use_legacy_routing = $(this).prop('checked');
         saveSettingsDebounced();
     });
 
