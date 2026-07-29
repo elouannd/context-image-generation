@@ -31,7 +31,7 @@ The extension now has a deliberately limited first adapter slice:
 - `lib/providers/openai-images.js` constructs minimal OpenAI Images payloads and normalizes base64 or URL responses.
 - `provider_keys` separates provider credentials while mirroring the legacy LinkAPI key for rollback compatibility.
 - LinkAPI has a manual-only advanced legacy route for recovery; it is never an automatic retry.
-- TokenReply `grok-imagine-image` is implemented only as an Experimental, text-only profile. No live provider generation was recorded in this work.
+- TokenReply `grok-imagine-image` and `grok-imagine-image-quality` are implemented only as an Experimental, text-only profile. No live provider generation was recorded in this work.
 
 The authoritative release status and evidence rules live in [PROVIDER_CATALOG.md](PROVIDER_CATALOG.md).
 

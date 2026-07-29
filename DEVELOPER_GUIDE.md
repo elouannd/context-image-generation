@@ -53,7 +53,7 @@ Settings are saved through SillyTavern's `saveSettingsDebounced()`. Provider cre
 | OpenRouter | Same SillyTavern backend route | Active SillyTavern provider configuration | Supported by the normal multimodal message path. |
 | LinkAPI + Gemini image model | `sillyTavernGeminiProxy`: Same SillyTavern backend route, forced to `chat_completion_source: 'makersuite'` | Per-provider LinkAPI key as `proxy_password`; `reverse_proxy: 'https://api.linkapi.ai'` | Supported by the normal multimodal message path. |
 | LinkAPI + `gpt-image*` or `dall-e*` model | `openAiImages`: direct browser `POST` to `https://linkapi.ai/v1/images/generations` | Per-provider LinkAPI bearer token | **Not supported.** All built messages are reduced to plain text. |
-| TokenReply + `grok-imagine-image` | `openAiImages`: direct browser `POST` to `https://api.tokenreply.com/v1/images/generations` | Per-provider TokenReply bearer token | **Not supported.** Experimental; minimal text-only payload omits image size. |
+| TokenReply + `grok-imagine-image` / `grok-imagine-image-quality` | `openAiImages`: direct browser `POST` to `https://api.tokenreply.com/v1/images/generations` | Per-provider TokenReply bearer token | **Not supported.** Experimental; minimal text-only payload omits image size. |
 
 The LinkAPI Gemini route is intentionally shaped as a Gemini/MakerSuite request because LinkAPI provides a Gemini-compatible proxy. Do not change the active chat-completion profile to make this work; the request-specific `reverse_proxy` and `proxy_password` overrides are the isolation boundary.
 
@@ -121,7 +121,7 @@ No live-provider request was performed while writing this document. Before claim
 - Generate once with a LinkAPI Gemini model and confirm the request uses the SillyTavern backend path with the LinkAPI proxy override.
 - Generate once with a LinkAPI `gpt-image*`/`dall-e*` model and confirm a browser request reaches the direct Images API path and produces an attached image.
 - Enable LinkAPI's advanced legacy-routing switch, deliberately perform one manual recovery generation, then disable it again; confirm no failed normal request triggers it automatically.
-- With a non-production TokenReply key, generate once with `grok-imagine-image`. Record the accepted size/resolution field and returned image shape before changing its Experimental status.
+- With a non-production TokenReply key, generate once with either `grok-imagine-image` or `grok-imagine-image-quality`. Record the accepted size/resolution field and returned image shape before changing its Experimental status.
 - Confirm the text-only UI notice is visible for the direct Images API model, and avatar references do not enter that request.
 - Confirm both a newly generated file-backed gallery item and an existing legacy base64 gallery item can display and serve as a previous-image reference.
 - Exercise an invalid or missing key for both LinkAPI and TokenReply and confirm the error is surfaced without revealing either key.

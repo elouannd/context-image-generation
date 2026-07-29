@@ -16,8 +16,12 @@ Provider availability and evidence status are tracked in [docs/PROVIDER_CATALOG.
 ## Provider adapters and recovery
 
 - **LinkAPI** keeps its existing Gemini-compatible and OpenAI Images model routes behind provider adapters. This does not change your active SillyTavern Chat Completion profile.
-- **TokenReply (Experimental)** provides the text-only `grok-imagine-image` profile. It sends a minimal request until a live compatibility test confirms TokenReply's supported image-size/resolution field and response format.
+- **TokenReply (Experimental)** provides the text-only `grok-imagine-image` and `grok-imagine-image-quality` profiles. It sends a minimal request until a live compatibility test confirms TokenReply's supported image-size/resolution field and response format.
 - **Manual LinkAPI recovery:** in LinkAPI's **Advanced** settings, **Use legacy LinkAPI routing** lets you deliberately retry using the pre-adapter request path. It is never automatic, so a failed normal request will not make an unrequested second paid generation.
+
+### Direct-provider troubleshooting
+
+Direct LinkAPI Images and TokenReply requests run in the browser. Use browser DevTools (**F12**): enable **Preserve log**, inspect **Console** for [context-image-generation] OpenAI Images error (HTTP status), and inspect **Network** for images/generations. Do not share the Authorization header or API key. Gemini/SillyTavern-routed request logs appear in the SillyTavern server console.
 ## What's New in this Fork (v1.7.0)
 
 - **Lighter gallery** - Gallery images are now stored as files (only paths are
@@ -87,7 +91,7 @@ Provider availability and evidence status are tracked in [docs/PROVIDER_CATALOG.
 - **Google AI Studio or OpenRouter:** configure the selected provider and its image-capable model in SillyTavern Chat Completion settings. Google AI Studio and OpenRouter use SillyTavern Chat Completion settings; this extension does not ask for a separate key for either route.
 - **LinkAPI Gemini models:** select LinkAPI in this extension and enter a LinkAPI key under Provider API Key. LinkAPI Gemini models use the SillyTavern route with a request-scoped LinkAPI proxy, without changing the active Chat Completion profile.
 - **LinkAPI `gpt-image*`/`dall-e*` models:** select LinkAPI and enter the same LinkAPI key. LinkAPI `gpt-image*`/`dall-e*` models use LinkAPI's direct Images route; they are text-only, and **Fetch models** is available only for LinkAPI.
-- **TokenReply `grok-imagine-image` (Experimental):** select TokenReply and enter a TokenReply key under Provider API Key. TokenReply is Experimental and text-only; it has one built-in model, no Fetch models control, no reference-image controls, and no image-size control until a live test verifies its contract.
+- **TokenReply `grok-imagine-image` (Experimental):** select TokenReply and enter a TokenReply key under Provider API Key. TokenReply is Experimental and text-only; it has two built-in models (`grok-imagine-image` and `grok-imagine-image-quality`), no Fetch models control, no reference-image controls, and no image-size control until a live test verifies its contract.
 
 ## Installation
 
@@ -107,7 +111,7 @@ Provider availability and evidence status are tracked in [docs/PROVIDER_CATALOG.
 
 - Select Google AI Studio or OpenRouter to use the active SillyTavern Chat Completion configuration.
 - Select LinkAPI to enter a LinkAPI key, choose Gemini or direct Images models, and optionally fetch additional `gpt-image*`/`dall-e*` models.
-- Select TokenReply (Experimental) to enter its separate key and use only `grok-imagine-image`; it is text-only and hides image-size and reference-image controls.
+- Select TokenReply (Experimental) to enter its separate key and choose `grok-imagine-image` or `grok-imagine-image-quality`; it is text-only and hides image-size and reference-image controls.
 - Choose aspect ratio and compatible controls for the selected model, toggle descriptions, customize the system instruction, and manage the gallery.
 
 ### Slash Command
@@ -122,7 +126,7 @@ Aliases: `/proimg`, `/geminiimg`
 |---------|-------------------------|
 | Provider | Google AI Studio/OpenRouter use SillyTavern Chat Completion settings; LinkAPI and TokenReply use a key entered in this extension. |
 | Provider API Key | Shown for LinkAPI and TokenReply only; each provider retains its own credential association. |
-| Model | Gemini controls apply to Gemini models. LinkAPI also offers direct, text-only `gpt-image*`/`dall-e*` models. TokenReply offers only experimental `grok-imagine-image`. |
+| Model | Gemini controls apply to Gemini models. LinkAPI also offers direct, text-only `gpt-image*`/`dall-e*` models. TokenReply offers experimental `grok-imagine-image` and `grok-imagine-image-quality`. |
 | Fetch models | LinkAPI only; discovers matching `gpt-image*`/`dall-e*` IDs for the current session. TokenReply has no model discovery. |
 | Aspect ratio / image size | Gemini-compatible controls retain their model-specific behavior. TokenReply hides image size until live verification confirms its accepted field. |
 | Avatar / previous-image references | Available only to models whose provider metadata supports reference images; hidden for TokenReply and direct LinkAPI Images models. |
