@@ -18,12 +18,7 @@
             <div class="flex-container">
                 <div class="flex1">
                     <label for="cig_provider">Provider</label>
-                    <select id="cig_provider" class="cig-setting">
-                        <option value="makersuite">Google AI Studio</option>
-                        <option value="linkapi">LinkAPI</option>
-                        <option value="tokenreply">TokenReply (Experimental)</option>
-                        <option value="openrouter">OpenRouter</option>
-                    </select>
+                    <select id="cig_provider" class="cig-setting"></select>
                 </div>
             </div>
 
@@ -48,10 +43,8 @@
                 </details>
             </div>
 
-            <!-- TokenReply Settings -->
-            <div id="cig_tokenreply_container" class="flex-container flexFlowColumn" style="display: none;">
-                <small><b>Experimental:</b> TokenReply uses <code>grok-imagine-image</code> through <code>https://api.tokenreply.com/v1/images/generations</code>. Only text prompts are sent; image-size and reference-image options stay disabled until a live compatibility check verifies them.</small>
-            </div>
+            <small id="cig_provider_info" style="display: none; opacity: 0.8;"></small>
+
             <!-- Model Selection -->
             <div class="flex-container">
                 <div class="flex1">
@@ -59,12 +52,7 @@
                     <select id="cig_model" class="cig-setting">
                         <!-- Populated dynamically based on provider -->
                     </select>
-                    <small id="cig_chatgpt_note" style="display: none; opacity: 0.8;">
-                        ChatGPT models: text prompt only — avatar/reference images are not supported.
-                    </small>
-                    <small id="cig_tokenreply_note" style="display: none; opacity: 0.8;">
-                        Experimental: TokenReply Grok uses a minimal text-only OpenAI Images request. Image size and reference images are not sent.
-                    </small>
+<small id="cig_model_note" style="display: none; opacity: 0.8;"></small>
                 </div>
             </div>
 

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { PROVIDERS, getModelDefinition, getProviderDefinition, resolveProviderRoute, resolveTransport } from '../lib/providers/registry.js';
+import { projectProviderUi } from '../lib/providers/ui-projection.js';
 
 test('routes LinkAPI Gemini and OpenAI image models by model contract', () => {
     assert.equal(resolveTransport('linkapi', 'gemini-2.5-flash-image'), 'sillyTavernGeminiProxy');
@@ -31,39 +32,25 @@ test('TokenReply Grok starts with a minimal experimental Images payload', () => 
     assert.equal(getModelDefinition('tokenreply', 'grok-imagine-image').supportsSize, undefined);
     assert.equal(getModelDefinition('tokenreply', 'grok-imagine-image').status, 'experimental');
 });
-test('exposes TokenReply as an experimental built-in profile with no model discovery', async () => {
-    const [index, dispatcher, settings] = await Promise.all([
-        readFile(new URL('../index.js', import.meta.url), 'utf8'),
-        readFile(new URL('../lib/providers/dispatch.js', import.meta.url), 'utf8'),
-        readFile(new URL('../settings.html', import.meta.url), 'utf8'),
-    ]);
-
-    assert.match(settings, /value="tokenreply">TokenReply \(Experimental\)<\/option>/);
-    assert.match(settings, /https:\/\/api\.tokenreply\.com\/v1\/images\/generations/);
-    assert.match(index, /resolveProviderRoute\(selectedProvider, settings\.model\)/);
-    assert.match(dispatcher, /baseUrl: provider\.transports\.openAiImages\.baseUrl/);
-    assert.doesNotMatch(index, /fetchTokenReplyModels/);
+test('declares TokenReply as an experimental no-discovery profile', () => {
+    const provider = getProviderDefinition('tokenreply');
+    const ui = projectProviderUi('tokenreply', 'grok-imagine-image');
+    assert.equal(provider.label, 'TokenReply (Experimental)');
+    assert.equal(provider.transports.openAiImages.baseUrl, 'https://api.tokenreply.com/v1');
+    assert.equal(ui.supportsModelDiscovery, false);
+    assert.equal(ui.requiresApiKey, true);
+    assert.match(ui.providerInfo, /images\/generations/);
 });
-test('uses resolved model capabilities to hide unsupported references while retaining Gemini references', async () => {
-    const [index, settings] = await Promise.all([
-        readFile(new URL('../index.js', import.meta.url), 'utf8'),
-        readFile(new URL('../settings.html', import.meta.url), 'utf8'),
-    ]);
 
-    for (const [providerId, modelId] of [
-        ['linkapi', 'gpt-image-2-c'],
-        ['linkapi', 'dall-e-3'],
-        ['tokenreply', 'grok-imagine-image'],
-    ]) {
-        assert.equal(getModelDefinition(providerId, modelId).supportsReferenceImages, false, `${providerId}/${modelId}`);
-    }
-    assert.notEqual(getModelDefinition('linkapi', 'gemini-2.5-flash-image')?.supportsReferenceImages, false);
-    assert.match(settings, /id="cig_avatar_reference_option"/);
-    assert.match(settings, /id="cig_previous_image_reference_option"/);
-    assert.match(index, /const modelDefinition = getModelDefinition\(provider, model\);/);
-    assert.match(index, /const supportsReferenceImages = modelDefinition\?\.supportsReferenceImages !== false;/);
-    assert.match(index, /\$\('#cig_avatar_reference_option'\)\.toggle\(supportsReferenceImages\)/);
-    assert.match(index, /\$\('#cig_previous_image_reference_option'\)\.toggle\(supportsReferenceImages\)/);
+test('projects reference and size controls from model capabilities', () => {
+    const tokenReply = projectProviderUi('tokenreply', 'grok-imagine-image');
+    const linkApiImage = projectProviderUi('linkapi', 'gpt-image-2-c');
+    const flash2 = projectProviderUi('linkapi', 'gemini-3.1-flash-image-preview');
+    assert.equal(tokenReply.supportsReferenceImages, false);
+    assert.equal(tokenReply.imageSizeOptions.length, 0);
+    assert.equal(linkApiImage.supportsReferenceImages, false);
+    assert.equal(flash2.imageSizeOptions.length > 0, true);
+    assert.equal(flash2.supportsThinking, true);
 });
 test('resolves a declarative OpenAI Images fixture without a provider-name branch', async () => {
     PROVIDERS.fixture = {

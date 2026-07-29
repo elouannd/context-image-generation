@@ -25,35 +25,13 @@ import { MEDIA_DISPLAY, MEDIA_SOURCE, MEDIA_TYPE, SCROLL_BEHAVIOR, SWIPE_DIRECTI
 import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
 import { SlashCommand } from '../../../slash-commands/SlashCommand.js';
 import { ARGUMENT_TYPE, SlashCommandArgument } from '../../../slash-commands/SlashCommandArgument.js';
-import { getModelDefinition, resolveProviderRoute } from './lib/providers/registry.js';
+import { getModelDefinition, resolveProviderRoute, getProviderDefinitions } from './lib/providers/registry.js';
+import { getModelFallback, projectProviderUi } from './lib/providers/ui-projection.js';
 import { buildOpenAiImagesRequest, parseOpenAiImagesResponse } from './lib/providers/openai-images.js';
 import { dispatchProviderRoute } from './lib/providers/dispatch.js';
 
 const extensionName = 'context-image-generation';
 const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
-
-// Provider-specific model configurations
-const PROVIDER_MODELS = {
-    makersuite: {
-        flash: { id: 'gemini-2.5-flash-image', name: 'Nano Banana 🍌 (~$0.04/img)' },
-        flash2: { id: 'gemini-3.1-flash-image-preview', name: 'Nano Banana 2 🍌 (Flash)' },
-        pro: { id: 'gemini-3-pro-image-preview', name: 'Nano Banana Pro 🍌 (~$0.14/img)' },
-    },
-    linkapi: {
-        flash: { id: 'gemini-2.5-flash-image', name: 'Nano Banana 🍌 (LinkAPI)' },
-        flash2: { id: 'gemini-3.1-flash-image-preview', name: 'Nano Banana 2 🍌 (LinkAPI)' },
-        pro: { id: 'gemini-3-pro-image-preview', name: 'Nano Banana Pro 🍌 (LinkAPI)' },
-        gptimage: { id: 'gpt-image-2-c', name: 'ChatGPT Image 🖼️ (gpt-image-2-c)' },
-    },
-    openrouter: {
-        flash: { id: 'google/gemini-2.5-flash-image-preview', name: 'Nano Banana 🍌 (OpenRouter)' },
-        flash2: { id: 'google/gemini-3.1-flash-image-preview', name: 'Nano Banana 2 🍌 (OpenRouter)' },
-        pro: { id: 'google/gemini-3-pro-image-preview', name: 'Nano Banana Pro 🍌 (OpenRouter)' },
-    },
-    tokenreply: {
-        grok: { id: 'grok-imagine-image', name: 'Grok Imagine Image (Experimental)' },
-    },
-};
 
 const defaultSettings = {
     provider: 'makersuite',
@@ -255,65 +233,35 @@ window.cigDebug = Object.assign(window.cigDebug || {}, {
     requestLinkApiImage,
 });
 
-function updateModelDropdown() {
-    const settings = extension_settings[extensionName];
-    const provider = settings.provider || 'makersuite';
-    const models = PROVIDER_MODELS[provider] || PROVIDER_MODELS.makersuite;
-
-    const $modelSelect = $('#cig_model');
-    $modelSelect.empty();
-
-    // Build options via DOM construction (not string interpolation) so ids/names
-    // from the LinkAPI /v1/models response cannot break the markup. `seen`
-    // dedupes without an attribute selector (which a quote in an id would break).
-    const seen = new Set();
-    const addOption = (id, name) => {
-        if (seen.has(id)) return;
-        seen.add(id);
-        $modelSelect.append($('<option>').val(id).text(name));
-    };
-
-    for (const m of Object.values(models)) {
-        addOption(m.id, m.name);
-    }
-
-    // Merge dynamically fetched LinkAPI image models (runtime only).
-    if (provider === 'linkapi' && Array.isArray(fetchedLinkApiModels)) {
-        for (const m of fetchedLinkApiModels) {
-            addOption(m.id, m.name);
-        }
-    }
-
-    // Preserve a previously selected gpt-image/dall-e model across reloads:
-    // fetchedLinkApiModels is runtime-only and empty after a reload, so without
-    // this a fetched model would silently fall back to a Gemini model below.
-    if (provider === 'linkapi' && isOpenAiImageModel(settings.model)) {
-        addOption(settings.model, settings.model);
-    }
-
-    // Keep the exact current model if it is still available; otherwise fall back
-    // to the closest type match (preserves cross-provider switching behaviour).
-    const optionValues = Array.from(seen);
-    const currentModel = settings.model || '';
-    const defaultModel = Object.values(models)[0];
-    if (optionValues.includes(currentModel)) {
-        $modelSelect.val(currentModel);
-    } else if ((currentModel.includes('pro') || currentModel.includes('3-pro')) && models.pro) {
-        $modelSelect.val(models.pro.id);
-        settings.model = models.pro.id;
-    } else if ((currentModel.includes('3.1') || currentModel.includes('3-1')) && models.flash2) {
-        $modelSelect.val(models.flash2.id);
-        settings.model = models.flash2.id;
-    } else {
-        $modelSelect.val(defaultModel.id);
-        settings.model = defaultModel.id;
-    }
-
-    if (typeof toggleImageSizeVisibility === 'function') {
-        toggleImageSizeVisibility();
+function renderProviderDropdown() {
+    const $providerSelect = $('#cig_provider').empty();
+    for (const provider of getProviderDefinitions()) {
+        $providerSelect.append($('<option>').val(provider.id).text(provider.label || provider.id));
     }
 }
 
+function updateModelDropdown() {
+    const settings = extension_settings[extensionName];
+    const providerId = settings.provider || 'makersuite';
+    const ui = projectProviderUi(providerId, settings.model);
+    if (!ui) return;
+    const $modelSelect = $('#cig_model').empty();
+    const seen = new Set();
+    const addOption = (id, label) => {
+        if (seen.has(id)) return;
+        seen.add(id);
+        $modelSelect.append($('<option>').val(id).text(label));
+    };
+    for (const model of ui.models) addOption(model.id, model.label);
+    if (ui.supportsModelDiscovery) {
+        for (const model of fetchedLinkApiModels) addOption(model.id, model.name);
+        const current = settings.model;
+        if (current && !seen.has(current) && /^((gpt-image)|(dall-e))/i.test(current)) addOption(current, current);
+    }
+    settings.model = getModelFallback(providerId, settings.model);
+    $modelSelect.val(settings.model);
+    toggleImageSizeVisibility();
+}
 async function loadSettings() {
     extension_settings[extensionName] = extension_settings[extensionName] || {};
     let settingsMigrated = false;
@@ -372,64 +320,34 @@ async function loadSettings() {
 
 function toggleProviderSpecificSettings() {
     const settings = extension_settings[extensionName];
-    const provider = settings.provider || 'makersuite';
-    const supportsProviderKey = provider === 'linkapi' || provider === 'tokenreply';
-    $('#cig_provider_key_container').toggle(supportsProviderKey);
-    $('#cig_linkapi_container').toggle(provider === 'linkapi');
-    $('#cig_tokenreply_container').toggle(provider === 'tokenreply');
-    $('#cig_provider_api_key_label').text(provider === 'linkapi' ? 'LinkAPI API Key' : 'TokenReply API Key');
-    $('#cig_provider_api_key').val(getProviderApiKey(settings, provider));
+    const ui = projectProviderUi(settings.provider || 'makersuite', settings.model);
+    if (!ui) return;
+    $('#cig_provider_key_container').toggle(ui.requiresApiKey);
+    $('#cig_linkapi_container').toggle(ui.supportsModelDiscovery || ui.showsLegacyRecovery);
+    $('#cig_provider_api_key_label').text(ui.apiKeyLabel);
+    $('#cig_provider_api_key').val(getProviderApiKey(settings, settings.provider));
+    $('#cig_provider_info').text(ui.providerInfo || '').toggle(Boolean(ui.providerInfo));
 }
 
 function toggleImageSizeVisibility() {
     const settings = extension_settings[extensionName];
-    const provider = settings.provider || 'makersuite';
-    const model = settings.model;
-    const modelDefinition = getModelDefinition(provider, model);
-    const supportsReferenceImages = modelDefinition?.supportsReferenceImages !== false;
-    const isProModel = /gemini-3-pro/.test(model);
-    const isFlash2Model = /gemini-3\.1/.test(model);
-    const isSizeSupported = isProModel || isFlash2Model;
-    const isTokenReply = provider === 'tokenreply';
-    $('#cig_image_size_container').toggle(isSizeSupported && !isTokenReply);
-    $('#cig_flash2_options').toggle(isFlash2Model && !isTokenReply);
-    $('#cig_chatgpt_note').toggle(isOpenAiImageModel(model));
-    $('#cig_tokenreply_note').toggle(isTokenReply);
-    $('#cig_avatar_reference_option').toggle(supportsReferenceImages);
-    $('#cig_previous_image_reference_option').toggle(supportsReferenceImages);
-
-    if (isSizeSupported && !isTokenReply) {
-        updateSizeDropdown(model, isFlash2Model);
-    }
+    const ui = projectProviderUi(settings.provider || 'makersuite', settings.model);
+    if (!ui) return;
+    const hasImageSizes = ui.imageSizeOptions.length > 0;
+    $('#cig_image_size_container').toggle(hasImageSizes);
+    $('#cig_flash2_options').toggle(ui.supportsThinking || ui.supportsGoogleSearch);
+    $('#cig_model_note').text(ui.modelNote || '').toggle(Boolean(ui.modelNote));
+    $('#cig_avatar_reference_option').toggle(ui.supportsReferenceImages);
+    $('#cig_previous_image_reference_option').toggle(ui.supportsReferenceImages);
+    if (hasImageSizes) updateSizeDropdown(ui.imageSizeOptions);
 }
 
-function updateSizeDropdown(model, isFlash2Model) {
+function updateSizeDropdown(imageSizeOptions) {
     const $sizeSelect = $('#cig_image_size');
     const currentValue = extension_settings[extensionName].image_size || '';
-
-    $sizeSelect.empty();
-    $sizeSelect.append('<option value="">Default</option>');
-
-    if (isFlash2Model) {
-        $('#cig_image_size_label').text('Image Size (Flash 2)');
-        $sizeSelect.append('<option value="512">512px</option>');
-        $sizeSelect.append('<option value="1K">1K</option>');
-        $sizeSelect.append('<option value="2K">2K</option>');
-        $sizeSelect.append('<option value="4K">4K</option>');
-    } else {
-        $('#cig_image_size_label').text('Image Size (Pro only)');
-        $sizeSelect.append('<option value="1K">1K</option>');
-        $sizeSelect.append('<option value="2K">2K</option>');
-        $sizeSelect.append('<option value="4K">4K</option>');
-    }
-
-    // Select previous if exists, otherwise Default
-    if ($sizeSelect.find(`option[value="${currentValue}"]`).length > 0) {
-        $sizeSelect.val(currentValue);
-    } else {
-        $sizeSelect.val('');
-        extension_settings[extensionName].image_size = '';
-    }
+    $sizeSelect.empty().append('<option value="">Default</option>');
+    for (const option of imageSizeOptions) $sizeSelect.append($('<option>').val(option.value).text(option.label));
+    $sizeSelect.val(currentValue);
 }
 
 async function getUserAvatar() {
@@ -1131,6 +1049,7 @@ jQuery(async () => {
         return;
     }
 
+    renderProviderDropdown();
     await loadSettings();
 
     $('#cig_provider').on('change', function () {
@@ -1144,7 +1063,7 @@ jQuery(async () => {
     $('#cig_provider_api_key').on('input', function () {
         const settings = extension_settings[extensionName];
         const provider = settings.provider || 'makersuite';
-        if (provider === 'linkapi' || provider === 'tokenreply') {
+        if (projectProviderUi(provider, settings.model)?.requiresApiKey) {
             setProviderApiKey(settings, provider, $(this).val());
             saveSettingsDebounced();
         }
