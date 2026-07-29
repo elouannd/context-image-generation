@@ -25,6 +25,9 @@ import { MEDIA_DISPLAY, MEDIA_SOURCE, MEDIA_TYPE, SCROLL_BEHAVIOR, SWIPE_DIRECTI
 import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
 import { SlashCommand } from '../../../slash-commands/SlashCommand.js';
 import { ARGUMENT_TYPE, SlashCommandArgument } from '../../../slash-commands/SlashCommandArgument.js';
+import { getModelDefinition, getProviderDefinition, resolveTransport } from './lib/providers/registry.js';
+import { buildOpenAiImagesRequest, parseOpenAiImagesResponse } from './lib/providers/openai-images.js';
+import { buildGeminiProxyRequest } from './lib/providers/gemini-proxy.js';
 
 const extensionName = 'context-image-generation';
 const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
@@ -164,6 +167,43 @@ async function requestLinkApiImage({ apiKey, model, prompt, size, host = 'https:
     throw new Error('No image was returned by the API');
 }
 
+async function requestOpenAiImages({ apiKey, model, prompt, size, baseUrl }) {
+    const response = await fetch(`${baseUrl}/images/generations`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey || ''}`,
+        },
+        body: JSON.stringify(buildOpenAiImagesRequest({
+            model,
+            prompt,
+            size,
+            responseFormat: 'b64_json',
+        })),
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[${extensionName}] OpenAI Images error (${response.status}):`, errorText);
+        let message = `API Error: ${response.status}`;
+        try {
+            const json = JSON.parse(errorText);
+            message = json.error?.message || json.message || message;
+        } catch (e) { /* keep default */ }
+        throw new Error(message);
+    }
+
+    const { b64, url: imageUrl } = parseOpenAiImagesResponse(await response.json());
+    if (b64) {
+        return { imageData: b64, mimeType: 'image/png' };
+    }
+
+    const imageResponse = await fetch(imageUrl);
+    if (!imageResponse.ok) {
+        throw new Error(`Failed to download generated image: HTTP ${imageResponse.status}`);
+    }
+    return { imageData: arrayBufferToBase64(await imageResponse.arrayBuffer()), mimeType: 'image/png' };
+}
 async function fetchLinkApiModels() {
     const settings = extension_settings[extensionName];
     const key = settings.linkapi_key;
@@ -521,53 +561,7 @@ async function buildMessages(prompt, sender = null, messageId = null) {
     return messages;
 }
 
-async function generateImageFromPrompt(prompt, sender = null, messageId = null) {
-    const settings = extension_settings[extensionName];
-    const messages = await buildMessages(prompt, sender, messageId);
-
-    const isFlash2 = /gemini-3\.1/.test(settings.model);
-    const selectedProvider = settings.provider || 'makersuite';
-    const isLinkApi = selectedProvider === 'linkapi';
-
-    // ChatGPT (gpt-image) via LinkAPI: direct fetch, text prompt only.
-    if (isLinkApi && isOpenAiImageModel(settings.model)) {
-        console.log(`[${extensionName}] Generating via LinkAPI images endpoint, model:`, settings.model);
-        return await requestLinkApiImage({
-            apiKey: settings.linkapi_key,
-            model: settings.model,
-            prompt: extractPromptText(messages),
-            size: mapAspectRatioToSize(settings.aspect_ratio),
-        });
-    }
-
-    const requestBody = {
-        chat_completion_source: isLinkApi ? 'makersuite' : selectedProvider,
-        model: settings.model,
-        messages: messages,
-        max_tokens: 8192,
-        temperature: 1,
-        request_images: true,
-        request_image_aspect_ratio: settings.aspect_ratio || '1:1',
-        request_image_resolution: settings.image_size || undefined,
-        stream: false,
-        // LinkAPI uses the Gemini-compatible proxy endpoint without changing the active ST chat profile.
-        reverse_proxy: isLinkApi ? 'https://api.linkapi.ai' : oai_settings.reverse_proxy || '',
-        proxy_password: isLinkApi ? settings.linkapi_key || '' : oai_settings.proxy_password || '',
-    };
-
-    // Flash 2 specific options
-    if (isFlash2) {
-        const thinkingLevel = settings.thinking_level || 'auto';
-        if (thinkingLevel !== 'auto') {
-            requestBody.reasoning_effort = thinkingLevel;
-        }
-        if (settings.use_google_search) {
-            requestBody.enable_web_search = true;
-        }
-    }
-
-    console.log(`[${extensionName}] Generating image with provider: ${settings.provider}, model:`, settings.model);
-
+async function requestSillyTavernImage(requestBody) {
     const response = await fetch('/api/backends/chat-completions/generate', {
         method: 'POST',
         headers: getRequestHeaders(),
@@ -606,6 +600,112 @@ async function generateImageFromPrompt(prompt, sender = null, messageId = null) 
     throw new Error('No image was returned by the API');
 }
 
+// Preserves the pre-adapter LinkAPI behavior for the explicit recovery switch.
+async function generateLegacyLinkApiImage(settings, messages) {
+    const isFlash2 = /gemini-3\.1/.test(settings.model);
+
+    if (isOpenAiImageModel(settings.model)) {
+        return await requestLinkApiImage({
+            apiKey: settings.linkapi_key,
+            model: settings.model,
+            prompt: extractPromptText(messages),
+            size: mapAspectRatioToSize(settings.aspect_ratio),
+        });
+    }
+
+    const requestBody = {
+        chat_completion_source: 'makersuite',
+        model: settings.model,
+        messages,
+        max_tokens: 8192,
+        temperature: 1,
+        request_images: true,
+        request_image_aspect_ratio: settings.aspect_ratio || '1:1',
+        request_image_resolution: settings.image_size || undefined,
+        stream: false,
+        reverse_proxy: 'https://api.linkapi.ai',
+        proxy_password: settings.linkapi_key || '',
+    };
+
+    if (isFlash2) {
+        const thinkingLevel = settings.thinking_level || 'auto';
+        if (thinkingLevel !== 'auto') {
+            requestBody.reasoning_effort = thinkingLevel;
+        }
+        if (settings.use_google_search) {
+            requestBody.enable_web_search = true;
+        }
+    }
+
+    return await requestSillyTavernImage(requestBody);
+}
+
+async function generateImageFromPrompt(prompt, sender = null, messageId = null) {
+    const settings = extension_settings[extensionName];
+    const messages = await buildMessages(prompt, sender, messageId);
+    const selectedProvider = settings.provider || 'makersuite';
+
+    if (selectedProvider === 'linkapi') {
+        const transport = resolveTransport(selectedProvider, settings.model);
+        const provider = getProviderDefinition(selectedProvider);
+
+        if (transport === 'sillyTavernGeminiProxy') {
+            const requestBody = buildGeminiProxyRequest({
+                model: settings.model,
+                messages,
+                apiKey: settings.linkapi_key,
+                baseUrl: provider.transports.sillyTavernGeminiProxy.baseUrl,
+                aspectRatio: settings.aspect_ratio,
+                imageSize: settings.image_size,
+                isFlash2: /gemini-3\.1/.test(settings.model),
+                thinkingLevel: settings.thinking_level,
+                useGoogleSearch: settings.use_google_search,
+            });
+            return await requestSillyTavernImage(requestBody);
+        }
+
+        if (transport === 'openAiImages') {
+            const modelDefinition = getModelDefinition(selectedProvider, settings.model);
+            return await requestOpenAiImages({
+                apiKey: settings.linkapi_key,
+                model: settings.model,
+                prompt: extractPromptText(messages),
+                size: modelDefinition?.supportsSize ? mapAspectRatioToSize(settings.aspect_ratio) : undefined,
+                baseUrl: provider.transports.openAiImages.baseUrl,
+            });
+        }
+
+        throw new Error(`No LinkAPI transport is configured for model: ${settings.model}`);
+    }
+
+    const isFlash2 = /gemini-3\.1/.test(settings.model);
+    const requestBody = {
+        chat_completion_source: selectedProvider,
+        model: settings.model,
+        messages,
+        max_tokens: 8192,
+        temperature: 1,
+        request_images: true,
+        request_image_aspect_ratio: settings.aspect_ratio || '1:1',
+        request_image_resolution: settings.image_size || undefined,
+        stream: false,
+        reverse_proxy: oai_settings.reverse_proxy || '',
+        proxy_password: oai_settings.proxy_password || '',
+    };
+
+    if (isFlash2) {
+        const thinkingLevel = settings.thinking_level || 'auto';
+        if (thinkingLevel !== 'auto') {
+            requestBody.reasoning_effort = thinkingLevel;
+        }
+        if (settings.use_google_search) {
+            requestBody.enable_web_search = true;
+        }
+    }
+
+    console.log(`[${extensionName}] Generating image with provider: ${settings.provider}, model:`, settings.model);
+    return await requestSillyTavernImage(requestBody);
+}
 // Resolve the <img> src for a gallery item. Supports new file-based items ({url})
 // and legacy base64 items ({imageData}) so pre-existing galleries keep working.
 function galleryItemSrc(item) {
