@@ -27,7 +27,7 @@ import { SlashCommand } from '../../../slash-commands/SlashCommand.js';
 import { ARGUMENT_TYPE, SlashCommandArgument } from '../../../slash-commands/SlashCommandArgument.js';
 import { getModelDefinition, resolveProviderRoute } from './lib/providers/registry.js';
 import { buildOpenAiImagesRequest, parseOpenAiImagesResponse } from './lib/providers/openai-images.js';
-import { buildGeminiProxyRequest } from './lib/providers/gemini-proxy.js';
+import { dispatchProviderRoute } from './lib/providers/dispatch.js';
 
 const extensionName = 'context-image-generation';
 const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
@@ -701,37 +701,22 @@ async function generateImageFromPrompt(prompt, sender = null, messageId = null) 
     }
 
     if (providerRoute.provider && providerRoute.transport) {
-        const { provider, model, transport } = providerRoute;
-        const apiKey = getProviderApiKey(settings, selectedProvider);
-
-        if (transport === 'sillyTavernGeminiProxy') {
-            const requestBody = buildGeminiProxyRequest({
-                model: settings.model,
-                messages,
-                apiKey,
-                baseUrl: provider.transports.sillyTavernGeminiProxy.baseUrl,
-                aspectRatio: settings.aspect_ratio,
-                imageSize: settings.image_size,
-                isFlash2: /gemini-3\.1/.test(settings.model),
-                thinkingLevel: settings.thinking_level,
-                useGoogleSearch: settings.use_google_search,
-            });
-            return await requestSillyTavernImage(requestBody);
-        }
-
-        if (transport === 'openAiImages') {
-            return await requestOpenAiImages({
-                apiKey,
-                model: settings.model,
-                prompt: extractPromptText(messages),
-                size: model.supportsSize ? mapAspectRatioToSize(settings.aspect_ratio) : undefined,
-                baseUrl: provider.transports.openAiImages.baseUrl,
-            });
-        }
-
-        throw new Error(`No ${provider.id} handler is configured for transport: ${transport}`);
+        return await dispatchProviderRoute({
+            route: providerRoute,
+            modelId: settings.model,
+            messages,
+            prompt: extractPromptText(messages),
+            apiKey: getProviderApiKey(settings, selectedProvider),
+            aspectRatio: settings.aspect_ratio,
+            imageSize: settings.image_size,
+            isFlash2: /gemini-3\.1/.test(settings.model),
+            thinkingLevel: settings.thinking_level,
+            useGoogleSearch: settings.use_google_search,
+            mapAspectRatioToSize,
+            requestOpenAiImages,
+            requestSillyTavernImage,
+        });
     }
-
     if (providerRoute.provider) {
         throw new Error(`No ${providerRoute.provider.id} transport is configured for model: ${settings.model}`);
     }

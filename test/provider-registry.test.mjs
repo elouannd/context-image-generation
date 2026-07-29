@@ -32,15 +32,16 @@ test('TokenReply Grok starts with a minimal experimental Images payload', () => 
     assert.equal(getModelDefinition('tokenreply', 'grok-imagine-image').status, 'experimental');
 });
 test('exposes TokenReply as an experimental built-in profile with no model discovery', async () => {
-    const [index, settings] = await Promise.all([
+    const [index, dispatcher, settings] = await Promise.all([
         readFile(new URL('../index.js', import.meta.url), 'utf8'),
+        readFile(new URL('../lib/providers/dispatch.js', import.meta.url), 'utf8'),
         readFile(new URL('../settings.html', import.meta.url), 'utf8'),
     ]);
 
     assert.match(settings, /value="tokenreply">TokenReply \(Experimental\)<\/option>/);
     assert.match(settings, /https:\/\/api\.tokenreply\.com\/v1\/images\/generations/);
     assert.match(index, /resolveProviderRoute\(selectedProvider, settings\.model\)/);
-    assert.match(index, /baseUrl: provider\.transports\.openAiImages\.baseUrl/);
+    assert.match(dispatcher, /baseUrl: provider\.transports\.openAiImages\.baseUrl/);
     assert.doesNotMatch(index, /fetchTokenReplyModels/);
 });
 test('hides both unsupported reference controls for TokenReply while retaining them elsewhere', async () => {
